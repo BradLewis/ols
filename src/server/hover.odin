@@ -71,6 +71,12 @@ get_hover_information :: proc(document: ^Document, position: common.Position) ->
 	)
 
 	position_context, ok := get_document_position_context(document, position, .Hover)
+	if !ok {
+		log.warn("Failed to get position context")
+		return hover, false, false
+	}
+
+	ast_context.position_hint = position_context.hint
 
 	get_globals(document.ast, &ast_context)
 
@@ -115,7 +121,10 @@ get_hover_information :: proc(document: ^Document, position: common.Position) ->
 					if identifier, ok := name.derived.(^ast.Ident); ok && field.type != nil {
 						if position_context.value_decl != nil && len(position_context.value_decl.names) != 0 {
 							if symbol, ok := resolve_type_expression(&ast_context, field.type); ok {
-								if struct_symbol, ok := resolve_type_expression(&ast_context, position_context.value_decl.names[0]); ok {
+								if struct_symbol, ok := resolve_type_expression(
+									&ast_context,
+									position_context.value_decl.names[0],
+								); ok {
 									symbol.pkg = struct_symbol.name
 									symbol.name = identifier.name
 									symbol.signature = get_signature(&ast_context, field.type.derived, symbol)
@@ -249,9 +258,24 @@ get_hover_information :: proc(document: ^Document, position: common.Position) ->
 		case SymbolPackageValue:
 			if position_context.field != nil {
 				if ident, ok := position_context.field.derived.(^ast.Ident); ok {
-					if symbol, ok := resolve_type_identifier(&ast_context, ident^); ok {
-						symbol.signature = get_signature(&ast_context, ident, symbol)
-						hover.contents = write_hover_content(&ast_context, symbol)
+					// check to see if we are in a position call context
+					if position_context.call != nil && ast_context.call == nil {
+						if call, ok := position_context.call.derived.(^ast.Call_Expr); ok {
+							if !position_in_exprs(call.args, position_context.position) {
+								ast_context.call = call
+							}
+						}
+					}
+					if resolved, ok := resolve_type_identifier(&ast_context, ident^); ok {
+						resolved.signature = get_signature(&ast_context, ident, resolved)
+						resolved.name = ident.name
+
+						if resolved.type == .Variable {
+							resolved.pkg = ast_context.document_package
+						}
+
+
+						hover.contents = write_hover_content(&ast_context, resolved)
 						return hover, true, true
 					}
 				}
