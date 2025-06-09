@@ -764,6 +764,30 @@ ast_hover_proc_overload_definition :: proc(t: ^testing.T) {
 
 	test.expect_hover(t, &source, "test.foo: proc {\n\tfoo_none :: proc(allocator := context.allocator) -> (_: int, _: bool),\n\tfoo_int :: proc(i: int, allocator := context.allocator) -> (_: int, _: bool),\n}")
 }
+
+@(test)
+ast_hover_within_struct_declaration :: proc(t: ^testing.T) {
+	source := test.Source {
+		main = `package test
+
+		get_int :: proc() -> int {
+			return 42
+		}
+
+		Bar :: struct {
+			foo: int
+		}
+
+		main :: proc() {
+			bar := Bar {
+				foo = get_i{*}nt(),
+			}
+		}
+		`
+	}
+
+	test.expect_hover(t, &source, "test.get_int: proc() -> int")
+}
 /*
 
 Waiting for odin fix
