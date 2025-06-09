@@ -96,20 +96,6 @@ get_definition_location :: proc(document: ^Document, position: common.Position) 
 			} else {
 				return {}, false
 			}
-		} else if position_context.identifier != nil {
-			if resolved, ok := resolve_location_identifier(
-				&ast_context,
-				position_context.identifier.derived.(^ast.Ident)^,
-			); ok {
-				location.range = resolved.range
-				if resolved.uri == "" {
-					location.uri = document.uri.uri
-				} else {
-					location.uri = resolved.uri
-				}
-				append(&locations, location)
-				return locations[:], true
-			}
 		}
 
 		if resolved, ok := resolve_location_selector(&ast_context, position_context.selector_expr); ok {
