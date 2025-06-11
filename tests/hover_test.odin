@@ -491,7 +491,7 @@ ast_hover_foreign_package_name_collision :: proc(t: ^testing.T) {
 		packages = packages[:],
 	}
 
-	test.expect_hover(t, &source, "node.bar: struct {\n}")
+	test.expect_hover(t, &source, "node.bar: ^my_package.bar :: struct {}")
 }
 @(test)
 ast_hover_struct :: proc(t: ^testing.T) {
@@ -852,6 +852,28 @@ ast_hover_sub_string_slices :: proc(t: ^testing.T) {
 	}
 
 	test.expect_hover(t, &source, "test.sub_str: string")
+}
+
+@(test)
+ast_hover_struct_field_use :: proc(t: ^testing.T) {
+	source := test.Source {
+		main = `package test
+		Foo :: struct {
+			value: int,
+		}
+
+		Bar :: struct {
+			foo: Foo,
+		}
+
+		main :: proc() {
+			bar := Bar{}
+			bar.fo{*}o.value += 1
+		}
+		`,
+	}
+
+	test.expect_hover(t, &source, "Bar.foo: test.Foo :: struct {\n\tvalue: int,\n}")
 }
 /*
 
