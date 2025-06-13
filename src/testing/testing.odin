@@ -216,7 +216,7 @@ expect_completion_details :: proc(t: ^testing.T, src: ^Source, trigger_character
 	}
 
 	if len(expect_details) == 0 && len(completion_list.items) > 0 {
-		log.errorf("Expected empty completion label, but received %v", completion_list.items)
+		log.errorf("Expected completion labels %v, but received %v", expect_details, completion_list.items)
 	}
 
 	flags := make([]int, len(expect_details), context.temp_allocator)
