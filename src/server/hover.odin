@@ -34,13 +34,36 @@ write_hover_content :: proc(ast_context: ^AstContext, symbol: Symbol) -> MarkupC
 		}
 	}
 
+	doc := ""
+
+	// TODO: maybe this is actually not a bad idea...
+	// could add a flag here skip this if it's not wanted
+	if false  /* feature flag */{
+		doc = symbol.doc
+	} else {
+		sb := strings.builder_make(ast_context.allocator)
+		if symbol.doc != "" {
+			strings.write_string(&sb, symbol.doc)
+			strings.write_string(&sb, "\n\nComments\n")
+		}
+		for c in ast_context.file.comments {
+			if c.pos.line == symbol.range.start.line + 1 {
+				for item in c.list {
+					strings.write_string(&sb, item.text)
+				}
+			}
+		}
+
+		doc = strings.to_string(sb)
+	}
+
 	build_procedure_symbol_signature(&symbol, false)
 
 	cat := concatenate_symbol_information(ast_context, symbol, false)
 
 	if cat != "" {
 		content.kind = "markdown"
-		content.value = fmt.tprintf("```odin\n%v\n```\n%v", cat, symbol.doc)
+		content.value = fmt.tprintf("```odin\n%v\n```\n%v", cat, doc)
 	} else {
 		content.kind = "plaintext"
 	}
@@ -125,6 +148,7 @@ get_hover_information :: proc(document: ^Document, position: common.Position) ->
 									&ast_context,
 									position_context.value_decl.names[0],
 								); ok {
+									symbol.range = common.get_token_range(field.node, ast_context.file.src)
 									symbol.type_name = symbol.name
 									symbol.type_pkg = symbol.pkg
 									symbol.pkg = struct_symbol.name
@@ -310,7 +334,7 @@ get_hover_information :: proc(document: ^Document, position: common.Position) ->
 					}
 				}
 			}
-		}	
+		}
 		return {}, false, true
 	} else if position_context.identifier != nil {
 		reset_ast_context(&ast_context)
