@@ -126,7 +126,7 @@ collect_struct_fields :: proc(
 	types := make([dynamic]^ast.Expr, 0, collection.allocator)
 	usings := make(map[int]bool, 0, collection.allocator)
 	ranges := make([dynamic]common.Range, 0, collection.allocator)
-	docs := make([dynamic]string, 0, collection.allocator)
+	docs := make([dynamic]^ast.Comment_Group, 0, collection.allocator)
 
 	for field in struct_type.fields.list {
 		for n in field.names {
@@ -143,8 +143,7 @@ collect_struct_fields :: proc(
 
 				append(&ranges, common.get_token_range(n, file.src))
 
-				doc := common.get_doc(field.docs, collection.allocator)
-				append(&docs, doc)
+				append(&docs, field.docs)
 			}
 		}
 	}

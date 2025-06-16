@@ -1618,6 +1618,7 @@ expand_struct_usings :: proc(ast_context: ^AstContext, symbol: Symbol, value: Sy
 	names := slice.to_dynamic(value.names, ast_context.allocator)
 	types := slice.to_dynamic(value.types, ast_context.allocator)
 	ranges := slice.to_dynamic(value.ranges, ast_context.allocator)
+	docs := slice.to_dynamic(value.docs, ast_context.allocator)
 
 	for k, v in value.usings {
 		set_ast_package_set_scoped(ast_context, symbol.pkg)
@@ -1642,6 +1643,10 @@ expand_struct_usings :: proc(ast_context: ^AstContext, symbol: Symbol, value: Sy
 
 				for range in struct_value.ranges {
 					append(&ranges, range)
+				}
+
+				for doc in struct_value.docs {
+					append(&docs, doc)
 				}
 			}
 		}
@@ -1684,7 +1689,7 @@ expand_struct_usings :: proc(ast_context: ^AstContext, symbol: Symbol, value: Sy
 		}
 	}
 
-	return {names = names[:], types = types[:], ranges = ranges[:]}
+	return {names = names[:], types = types[:], ranges = ranges[:], docs = docs[:], usings = value.usings}
 }
 
 resolve_slice_expression :: proc(ast_context: ^AstContext, slice_expr: ^ast.Slice_Expr) -> (symbol: Symbol, ok: bool) {
@@ -2782,9 +2787,30 @@ make_symbol_struct_from_ast :: proc(
 	types := make([dynamic]^ast.Expr, ast_context.allocator)
 	usings := make(map[int]bool, 0, ast_context.allocator)
 	ranges := make([dynamic]common.Range, 0, ast_context.allocator)
-	docs := make([dynamic]string, 0, ast_context.allocator)
+	docs := make([dynamic]^ast.Comment_Group, 0, ast_context.allocator)
+	comments := make([dynamic]^ast.Comment_Group, 0, ast_context.allocator)
 
-	for field in v.fields.list {
+	for field, i in v.fields.list {
+		// There is currently a bug in the odin parser where it adds line comments for a field to the
+		// docs of the following field, we address this problem here.
+		// see https://github.com/odin-lang/Odin/issues/5353
+		if field.comment == nil && i != len(v.fields.list) - 1 {
+			next_field := v.fields.list[i + 1]
+			if next_field.docs != nil && len(next_field.docs.list) > 0 {
+				list := next_field.docs.list
+				if list[0].pos.line == field.pos.line {
+					field.comment = ast.new(ast.Comment_Group, list[0].pos, parser.end_pos(list[0]))
+					field.comment.list = list[:1]
+					if len(list) > 1 {
+						next_field.docs = ast.new(ast.Comment_Group, list[1].pos, parser.end_pos(list[len(list) - 2]))
+						next_field.docs.list = list[1:]
+					} else {
+						next_field.docs = nil
+					}
+				}
+			}
+		}
+
 		for n in field.names {
 			if identifier, ok := n.derived.(^ast.Ident); ok && field.type != nil {
 				if .Using in field.flags {
@@ -2799,19 +2825,20 @@ make_symbol_struct_from_ast :: proc(
 				}
 
 				append(&ranges, common.get_token_range(n, ast_context.file.src))
-				doc := common.get_doc(field.docs, ast_context.allocator)
-				append(&docs, doc)
+				append(&docs, field.docs)
+				append(&comments, field.comment)
 			}
 		}
 	}
 
 	symbol.value = SymbolStructValue {
-		names  = names[:],
-		types  = types[:],
-		ranges = ranges[:],
-		usings = usings,
-		poly   = v.poly_params,
-		docs   = docs[:],
+		names    = names[:],
+		types    = types[:],
+		ranges   = ranges[:],
+		usings   = usings,
+		poly     = v.poly_params,
+		docs     = docs[:],
+		comments = comments[:],
 	}
 
 	if _, ok := get_attribute_objc_class_name(attributes); ok {
@@ -3960,6 +3987,16 @@ append_variable_full_name :: proc(
 	return
 }
 
+make_comment_map :: proc(groups: []^ast.Comment_Group, allocator: mem.Allocator) -> map[int]^ast.Comment_Group {
+	comment_map := make(map[int]^ast.Comment_Group, allocator = allocator)
+
+	for cg in groups {
+		comment_map[cg.pos.line] = cg
+	}
+
+	return comment_map
+}
+
 get_signature :: proc(
 	ast_context: ^AstContext,
 	symbol: Symbol,
@@ -3975,7 +4012,7 @@ get_signature :: proc(
 	}
 
 	is_variable := symbol.type == .Variable
-
+	is_field := symbol.type == .Field
 
 	pointer_prefix := repeat("^", symbol.pointers, context.temp_allocator)
 
@@ -4028,6 +4065,14 @@ get_signature :: proc(
 		builder := strings.builder_make(ast_context.allocator)
 		if is_variable {
 			append_variable_full_name(&builder, ast_context, symbol, pointer_prefix)
+		} else if is_field {
+			pkg_name := symbol.type_pkg
+			if pkg_name == "" {
+				fmt.sbprintf(&builder, "%s%s", pointer_prefix, symbol.type_name)
+				return strings.to_string(builder)
+			}
+			fmt.sbprintf(&builder, "%s%s.%s", pointer_prefix, pkg_name, symbol.type_name)
+			return strings.to_string(builder)
 		} else if symbol.type_name != "" {
 			if symbol.type_pkg == "" {
 				fmt.sbprintf(&builder, "%s%s :: ", pointer_prefix, symbol.type_name)
@@ -4039,28 +4084,11 @@ get_signature :: proc(
 				fmt.sbprintf(&builder, "%s%s.%s :: ", pointer_prefix, pkg_name, symbol.type_name)
 			}
 		}
-		longestNameLen := 0
-		for name in v.names {
-			if len(name) > longestNameLen {
-				longestNameLen = len(name)
-			}
-		}
 		if len(v.names) == 0 {
 			strings.write_string(&builder, "struct {}")
 			return strings.to_string(builder)
 		}
-		strings.write_string(&builder, "struct {\n")
-		for i in 0 ..< len(v.names) {
-			strings.write_string(&builder, "\t")
-			if i <len(v.docs) && v.docs[i] != "" {
-				fmt.sbprintf(&builder, "%s\n", v.docs[i])
-			}
-			strings.write_string(&builder, v.names[i])
-			fmt.sbprintf(&builder, ":%*s", longestNameLen - len(v.names[i]) + 1, "")
-			build_string_node(v.types[i], &builder, false)
-			strings.write_string(&builder, ",\n")
-		}
-		strings.write_string(&builder, "}")
+		append_struct_hover(ast_context, &builder, v)
 		return strings.to_string(builder)
 	case SymbolUnionValue:
 		if short_signature {
@@ -4139,6 +4167,42 @@ get_signature :: proc(
 	}
 
 	return ""
+}
+
+append_struct_hover :: proc(ast_context: ^AstContext, sb: ^strings.Builder, v: SymbolStructValue) {
+	longestNameLen := 0
+	for name in v.names {
+		if len(name) > longestNameLen {
+			longestNameLen = len(name)
+		}
+	}
+
+	strings.write_string(sb, "struct {\n")
+	for i in 0 ..< len(v.names) {
+		if i < len(v.docs) && v.docs[i] != nil {
+			for c in v.docs[i].list {
+				fmt.sbprintf(sb, "\t%s\n", c.text)
+			}
+		}
+
+		strings.write_string(sb, "\t")
+		if _, ok := v.usings[i]; ok {
+			strings.write_string(sb, "using ")
+		}
+		strings.write_string(sb, v.names[i])
+		fmt.sbprintf(sb, ":%*s", longestNameLen - len(v.names[i]) + 1, "")
+		build_string_node(v.types[i], sb, false)
+		strings.write_string(sb, ",")
+
+		if i < len(v.comments) && v.comments[i] != nil {
+			for c in v.comments[i].list {
+				fmt.sbprintf(sb, " %s\n", c.text)
+			}
+		} else {
+			strings.write_string(sb, "\n")
+		}
+	}
+	strings.write_string(sb, "}")
 }
 
 position_in_proc_decl :: proc(position_context: ^DocumentPositionContext) -> bool {

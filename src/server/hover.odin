@@ -148,6 +148,7 @@ get_hover_information :: proc(document: ^Document, position: common.Position) ->
 									&ast_context,
 									position_context.value_decl.names[0],
 								); ok {
+									symbol.type = .Field
 									symbol.range = common.get_token_range(field.node, ast_context.file.src)
 									symbol.type_name = symbol.name
 									symbol.type_pkg = symbol.pkg

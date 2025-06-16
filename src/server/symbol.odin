@@ -19,13 +19,14 @@ SymbolAndNode :: struct {
 }
 
 SymbolStructValue :: struct {
-	names:  []string,
-	ranges: []common.Range,
-	types:  []^ast.Expr,
-	usings: map[int]bool,
-	poly:   ^ast.Field_List,
-	args:   []^ast.Expr, //The arguments in the call expression for poly
-	docs:   []string,
+	names:    []string,
+	ranges:   []common.Range,
+	types:    []^ast.Expr,
+	usings:   map[int]bool,
+	poly:     ^ast.Field_List,
+	args:     []^ast.Expr, //The arguments in the call expression for poly
+	docs:     []^ast.Comment_Group,
+	comments: []^ast.Comment_Group,
 }
 
 SymbolBitFieldValue :: struct {

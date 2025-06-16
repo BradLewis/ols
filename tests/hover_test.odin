@@ -1356,79 +1356,45 @@ ast_hover_proc_overloading_parametric_type_external_package :: proc(t: ^testing.
 }
 
 @(test)
-ast_hover_proc_overloading_parametric_type :: proc(t: ^testing.T) {
-	packages := make([dynamic]test.Package, context.temp_allocator)
-
-	append(
-		&packages,
-		test.Package {
-			pkg = "my_package",
-			source = `package my_package
-
-			Foo :: struct {}
-		`,
-		},
-	)
-
+ast_hover_struct_documentation :: proc(t: ^testing.T) {
 	source := test.Source {
 		main = `package test
-		import "my_package"
 
-		new_ints :: proc($T: typeid, a, b: int) -> ^T {}
-		new_int_string :: proc($T: typeid, a: int, s: string) -> ^T {}
-
-		new :: proc {
-			new_ints,
-			new_int_string,
-		}
-
-
-		main :: proc() {
-			f{*}oo := new(my_package.Foo, 1, 2)
+		F{*}oo :: struct {
+			// This is an int
+			foo_int: int,
+			bar: int, // this is bar
+			//this is a goo
+			goo: int,
 		}
 		`,
-		packages = packages[:],
 	}
 
-	test.expect_hover(t, &source, "test.foo: ^my_package.Foo :: struct {}")
+	test.expect_hover(t, &source, "test.Foo: struct {\n\t// This is an int\n\tfoo_int: int,\n\tbar:     int,// this is bar\n\t//this is a goo\n\tgoo:     int,\n}")
 }
 
 @(test)
-ast_hover_proc_overloading_parametric_type_external_package :: proc(t: ^testing.T) {
-	packages := make([dynamic]test.Package, context.temp_allocator)
-
-	append(
-		&packages,
-		test.Package {
-			pkg = "my_package",
-			source = `package my_package
-			new_ints :: proc($T: typeid, a, b: int) -> ^T {}
-			new_int_string :: proc($T: typeid, a: int, s: string) -> ^T {}
-
-			new :: proc {
-				new_ints,
-				new_int_string,
-			}
-
-			Foo :: struct {}
-		`,
-		},
-	)
-
+ast_hover_struct_documentation_using :: proc(t: ^testing.T) {
 	source := test.Source {
 		main = `package test
 
-		import "my_package"		
+		Foo :: struct {
+			// This is an int
+			foo_int: int,
+		}
 
+		B{*}ar :: struct {
+			// using a foo
+			using foo: Foo, // hi
 
-		main :: proc() {
-			f{*}oo := my_package.new(my_package.Foo, 1, 2)
+			// this is a string
+			bar_string: string,
+			bar_int: int, // This is a bar int
 		}
 		`,
-		packages = packages[:],
 	}
 
-	test.expect_hover(t, &source, "test.foo: ^my_package.Foo :: struct {}")
+	test.expect_hover(t, &source, "test.Bar: struct {\n\t// using a foo\n\tusing foo:        Foo,// hi\n\t// this is a string\n\tbar_string: string,\n\tbar_int:    int,// This is a bar int\n\t// This is an int\n\tfoo_int:    int,\n}")
 }
 /*
 
