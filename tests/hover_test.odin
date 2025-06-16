@@ -498,6 +498,7 @@ ast_hover_struct :: proc(t: ^testing.T) {
 	source := test.Source {
 		main = `package test
 		Foo :: struct {
+			// this is a doc
 			bar: int,
 			f: proc(a: int) -> int,
 		}
@@ -506,7 +507,7 @@ ast_hover_struct :: proc(t: ^testing.T) {
 		`,
 	}
 
-	test.expect_hover(t, &source, "test.Foo: struct {\n\tbar: int,\n\tf:   proc(a: int) -> int,\n}")
+	test.expect_hover(t, &source, "test.Foo: struct {\n\t\n this is a doc\nbar: int,\n\tf:   proc(a: int) -> int,\n}")
 }
 
 @(test)

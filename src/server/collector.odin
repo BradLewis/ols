@@ -126,6 +126,7 @@ collect_struct_fields :: proc(
 	types := make([dynamic]^ast.Expr, 0, collection.allocator)
 	usings := make(map[int]bool, 0, collection.allocator)
 	ranges := make([dynamic]common.Range, 0, collection.allocator)
+	docs := make([dynamic]string, 0, collection.allocator)
 
 	for field in struct_type.fields.list {
 		for n in field.names {
@@ -141,6 +142,9 @@ collect_struct_fields :: proc(
 				}
 
 				append(&ranges, common.get_token_range(n, file.src))
+
+				doc := common.get_doc(field.docs, collection.allocator)
+				append(&docs, doc)
 			}
 		}
 	}
@@ -151,6 +155,7 @@ collect_struct_fields :: proc(
 		ranges = ranges[:],
 		usings = usings,
 		poly   = cast(^ast.Field_List)clone_type(struct_type.poly_params, collection.allocator, &collection.unique_strings),
+		docs   = docs[:],
 	}
 
 	return value

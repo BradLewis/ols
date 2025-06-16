@@ -25,6 +25,7 @@ SymbolStructValue :: struct {
 	usings: map[int]bool,
 	poly:   ^ast.Field_List,
 	args:   []^ast.Expr, //The arguments in the call expression for poly
+	docs:   []string,
 }
 
 SymbolBitFieldValue :: struct {

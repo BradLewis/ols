@@ -2782,6 +2782,7 @@ make_symbol_struct_from_ast :: proc(
 	types := make([dynamic]^ast.Expr, ast_context.allocator)
 	usings := make(map[int]bool, 0, ast_context.allocator)
 	ranges := make([dynamic]common.Range, 0, ast_context.allocator)
+	docs := make([dynamic]string, 0, ast_context.allocator)
 
 	for field in v.fields.list {
 		for n in field.names {
@@ -2798,6 +2799,8 @@ make_symbol_struct_from_ast :: proc(
 				}
 
 				append(&ranges, common.get_token_range(n, ast_context.file.src))
+				doc := common.get_doc(field.docs, ast_context.allocator)
+				append(&docs, doc)
 			}
 		}
 	}
@@ -2808,6 +2811,7 @@ make_symbol_struct_from_ast :: proc(
 		ranges = ranges[:],
 		usings = usings,
 		poly   = v.poly_params,
+		docs   = docs[:],
 	}
 
 	if _, ok := get_attribute_objc_class_name(attributes); ok {
@@ -4048,6 +4052,9 @@ get_signature :: proc(
 		strings.write_string(&builder, "struct {\n")
 		for i in 0 ..< len(v.names) {
 			strings.write_string(&builder, "\t")
+			if i <len(v.docs) && v.docs[i] != "" {
+				fmt.sbprintf(&builder, "%s\n", v.docs[i])
+			}
 			strings.write_string(&builder, v.names[i])
 			fmt.sbprintf(&builder, ":%*s", longestNameLen - len(v.names[i]) + 1, "")
 			build_string_node(v.types[i], &builder, false)
