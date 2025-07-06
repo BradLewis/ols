@@ -181,7 +181,6 @@ remove_index_file :: proc(uri: common.Uri) -> common.Error {
 	for k, &v in indexer.index.collection.packages {
 		for k2, v2 in v.symbols {
 			if strings.equal_fold(corrected_uri.uri, v2.uri) {
-				free_symbol(v2, indexer.index.collection.allocator)
 				delete_key(&v.symbols, k2)
 			}
 		}
@@ -251,7 +250,6 @@ index_file :: proc(uri: common.Uri, text: string) -> common.Error {
 	for k, &v in indexer.index.collection.packages {
 		for k2, v2 in v.symbols {
 			if corrected_uri.uri == v2.uri {
-				free_symbol(v2, indexer.index.collection.allocator)
 				delete_key(&v.symbols, k2)
 			}
 		}

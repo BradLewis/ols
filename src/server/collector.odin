@@ -18,7 +18,7 @@ SymbolCollection :: struct {
 	config:         ^common.Config,
 	packages:       map[string]SymbolPackage,
 	unique_strings: map[string]string, //store all our strings as unique strings and reference them to save memory.
-	allocators:     map[string]mem.Allocator,
+	arenas:			map[string]^virtual.Arena,
 }
 
 ObjcFunction :: struct {
@@ -72,26 +72,27 @@ make_symbol_collection :: proc(allocator := context.allocator, config: ^common.C
 		config = config,
 		packages = make(map[string]SymbolPackage, 16, allocator),
 		unique_strings = make(map[string]string, 16, allocator),
-		allocators = make(map[string]mem.Allocator, 16, allocator),
+		arenas = make(map[string]^virtual.Arena, 16, allocator),
 	}
 }
 
 get_collection_file_allocator :: proc(collection: ^SymbolCollection, uri: string) -> mem.Allocator {
-	if allocator, ok := collection.allocators[uri]; ok {
+	if arena, ok := collection.arenas[uri]; ok {
+		allocator := virtual.arena_allocator(arena)
 		free_all(allocator)
 		return allocator
 	}
 
 	arena := new(virtual.Arena, collection.allocator)
 	_ = virtual.arena_init_growing(arena)
+	collection.arenas[uri] = arena
 	allocator := virtual.arena_allocator(arena)
-	collection.allocators[uri] = allocator
 	return allocator
 }
 
 delete_symbol_collection :: proc(collection: SymbolCollection) {
-	for _, v in collection.allocators {
-		free_all(v)
+	for _, arena in collection.arenas {
+		virtual.arena_destroy(arena)
 	}
 	free_all(collection.allocator)
 }
@@ -712,8 +713,6 @@ collect_symbols :: proc(collection: ^SymbolCollection, file: ast.File, uri: stri
 
 		if v, ok := pkg.symbols[symbol.name]; !ok || v.name == "" {
 			pkg.symbols[symbol.name] = symbol
-		} else {
-			free_symbol(symbol, allocator)
 		}
 	}
 
