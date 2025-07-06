@@ -4,6 +4,7 @@ import "core:fmt"
 import "core:hash"
 import "core:log"
 import "core:mem"
+import "core:mem/virtual"
 import "core:odin/ast"
 import "core:path/filepath"
 import path "core:path/slashpath"
@@ -17,6 +18,7 @@ SymbolCollection :: struct {
 	config:         ^common.Config,
 	packages:       map[string]SymbolPackage,
 	unique_strings: map[string]string, //store all our strings as unique strings and reference them to save memory.
+	allocators:     map[string]mem.Allocator,
 }
 
 ObjcFunction :: struct {
@@ -70,10 +72,27 @@ make_symbol_collection :: proc(allocator := context.allocator, config: ^common.C
 		config = config,
 		packages = make(map[string]SymbolPackage, 16, allocator),
 		unique_strings = make(map[string]string, 16, allocator),
+		allocators = make(map[string]mem.Allocator, 16, allocator),
 	}
 }
 
+get_collection_file_allocator :: proc(collection: ^SymbolCollection, uri: string) -> mem.Allocator {
+	if allocator, ok := collection.allocators[uri]; ok {
+		free_all(allocator)
+		return allocator
+	}
+
+	arena := new(virtual.Arena, collection.allocator)
+	_ = virtual.arena_init_growing(arena)
+	allocator := virtual.arena_allocator(arena)
+	collection.allocators[uri] = allocator
+	return allocator
+}
+
 delete_symbol_collection :: proc(collection: SymbolCollection) {
+	for _, v in collection.allocators {
+		free_all(v)
+	}
 	free_all(collection.allocator)
 }
 
@@ -84,13 +103,14 @@ collect_procedure_fields :: proc(
 	return_list: ^ast.Field_List,
 	package_map: map[string]string,
 	attributes: []^ast.Attribute,
+	allocator: mem.Allocator,
 ) -> SymbolProcedureValue {
-	returns := make([dynamic]^ast.Field, 0, collection.allocator)
-	args := make([dynamic]^ast.Field, 0, collection.allocator)
+	returns := make([dynamic]^ast.Field, 0, allocator)
+	args := make([dynamic]^ast.Field, 0, allocator)
 
 	if return_list != nil {
 		for ret in return_list.list {
-			cloned := cast(^ast.Field)clone_type(ret, collection.allocator, &collection.unique_strings)
+			cloned := cast(^ast.Field)clone_type(ret, allocator, &collection.unique_strings)
 			replace_package_alias(cloned, package_map, collection)
 			append(&returns, cloned)
 		}
@@ -98,7 +118,7 @@ collect_procedure_fields :: proc(
 
 	if arg_list != nil {
 		for arg in arg_list.list {
-			cloned := cast(^ast.Field)clone_type(arg, collection.allocator, &collection.unique_strings)
+			cloned := cast(^ast.Field)clone_type(arg, allocator, &collection.unique_strings)
 			replace_package_alias(cloned, package_map, collection)
 			append(&args, cloned)
 		}
@@ -121,8 +141,9 @@ collect_struct_fields :: proc(
 	struct_type: ^ast.Struct_Type,
 	package_map: map[string]string,
 	file: ast.File,
+	allocator: mem.Allocator,
 ) -> SymbolStructValue {
-	b := symbol_struct_value_builder_make(collection.allocator)
+	b := symbol_struct_value_builder_make(allocator)
 	construct_struct_field_docs(file, struct_type)
 
 	for field in struct_type.fields.list {
@@ -130,7 +151,7 @@ collect_struct_fields :: proc(
 			if ident, ok := n.derived.(^ast.Ident); ok {
 				append(&b.names, get_index_unique_string(collection, ident.name))
 
-				cloned := clone_type(field.type, collection.allocator, &collection.unique_strings)
+				cloned := clone_type(field.type, allocator, &collection.unique_strings)
 				replace_package_alias(cloned, package_map, collection)
 				append(&b.types, cloned)
 
@@ -141,9 +162,9 @@ collect_struct_fields :: proc(
 
 				append(&b.ranges, common.get_token_range(n, file.src))
 
-				cloned_docs := clone_type(field.docs, collection.allocator, &collection.unique_strings)
+				cloned_docs := clone_type(field.docs, allocator, &collection.unique_strings)
 				append(&b.docs, cloned_docs)
-				cloned_comment := clone_type(field.comment, collection.allocator, &collection.unique_strings)
+				cloned_comment := clone_type(field.comment, allocator, &collection.unique_strings)
 				append(&b.comments, cloned_comment)
 				append(&b.from_usings, -1)
 			}
@@ -151,7 +172,7 @@ collect_struct_fields :: proc(
 	}
 
 	value := to_symbol_struct_value(b)
-	value.poly = cast(^ast.Field_List)clone_type(struct_type.poly_params, collection.allocator, &collection.unique_strings)
+	value.poly = cast(^ast.Field_List)clone_type(struct_type.poly_params, allocator, &collection.unique_strings)
 
 	return value
 }
@@ -161,32 +182,33 @@ collect_bit_field_fields :: proc(
 	bit_field_type: ^ast.Bit_Field_Type,
 	package_map: map[string]string,
 	file: ast.File,
+	allocator: mem.Allocator,
 ) -> SymbolBitFieldValue {
 	construct_bit_field_field_docs(file, bit_field_type)
-	names := make([dynamic]string, 0, len(bit_field_type.fields), collection.allocator)
-	types := make([dynamic]^ast.Expr, 0, len(bit_field_type.fields), collection.allocator)
-	ranges := make([dynamic]common.Range, 0, len(bit_field_type.fields), collection.allocator)
-	docs := make([dynamic]^ast.Comment_Group, 0, collection.allocator)
-	comments := make([dynamic]^ast.Comment_Group, 0, collection.allocator)
-	bit_sizes := make([dynamic]^ast.Expr, 0, collection.allocator)
+	names := make([dynamic]string, 0, len(bit_field_type.fields), allocator)
+	types := make([dynamic]^ast.Expr, 0, len(bit_field_type.fields), allocator)
+	ranges := make([dynamic]common.Range, 0, len(bit_field_type.fields), allocator)
+	docs := make([dynamic]^ast.Comment_Group, 0, allocator)
+	comments := make([dynamic]^ast.Comment_Group, 0, allocator)
+	bit_sizes := make([dynamic]^ast.Expr, 0, allocator)
 
 	for field, i in bit_field_type.fields {
 		if ident, ok := field.name.derived.(^ast.Ident); ok {
 			append(&names, get_index_unique_string(collection, ident.name))
 
-			cloned := clone_type(field.type, collection.allocator, &collection.unique_strings)
+			cloned := clone_type(field.type, allocator, &collection.unique_strings)
 			replace_package_alias(cloned, package_map, collection)
 			append(&types, cloned)
 
 			append(&ranges, common.get_token_range(ident, file.src))
-			append(&docs, clone_comment_group(field.docs, collection.allocator, &collection.unique_strings))
-			append(&comments, clone_comment_group(field.comments, collection.allocator, &collection.unique_strings))
-			append(&bit_sizes, clone_type(field.bit_size, collection.allocator, &collection.unique_strings))
+			append(&docs, clone_comment_group(field.docs, allocator, &collection.unique_strings))
+			append(&comments, clone_comment_group(field.comments, allocator, &collection.unique_strings))
+			append(&bit_sizes, clone_type(field.bit_size, allocator, &collection.unique_strings))
 		}
 	}
 
 	value := SymbolBitFieldValue {
-		backing_type = clone_type(bit_field_type.backing_type, collection.allocator, &collection.unique_strings),
+		backing_type = clone_type(bit_field_type.backing_type, allocator, &collection.unique_strings),
 		names        = names[:],
 		types        = types[:],
 		ranges       = ranges[:],
@@ -203,23 +225,24 @@ collect_enum_fields :: proc(
 	enum_type: ast.Enum_Type,
 	package_map: map[string]string,
 	file: ast.File,
+	allocator: mem.Allocator,
 ) -> SymbolEnumValue {
-	names := make([dynamic]string, 0, collection.allocator)
-	ranges := make([dynamic]common.Range, 0, collection.allocator)
-	values := make([dynamic]^ast.Expr, 0, collection.allocator)
+	names := make([dynamic]string, 0, allocator)
+	ranges := make([dynamic]common.Range, 0, allocator)
+	values := make([dynamic]^ast.Expr, 0, allocator)
 
 	for n in enum_type.fields {
 		name, range, value := get_enum_field_name_range_value(n, file.src)
-		append(&names, strings.clone(name, collection.allocator))
+		append(&names, strings.clone(name, allocator))
 		append(&ranges, range)
-		append(&values, clone_type(value, collection.allocator, &collection.unique_strings))
+		append(&values, clone_type(value, allocator, &collection.unique_strings))
 	}
 
 	value := SymbolEnumValue {
 		names     = names[:],
 		ranges    = ranges[:],
 		values    = values[:],
-		base_type = clone_type(enum_type.base_type, collection.allocator, &collection.unique_strings),
+		base_type = clone_type(enum_type.base_type, allocator, &collection.unique_strings),
 	}
 
 	return value
@@ -229,18 +252,19 @@ collect_union_fields :: proc(
 	collection: ^SymbolCollection,
 	union_type: ast.Union_Type,
 	package_map: map[string]string,
+	allocator: mem.Allocator,
 ) -> SymbolUnionValue {
-	types := make([dynamic]^ast.Expr, 0, collection.allocator)
+	types := make([dynamic]^ast.Expr, 0, allocator)
 
 	for variant in union_type.variants {
-		cloned := clone_type(variant, collection.allocator, &collection.unique_strings)
+		cloned := clone_type(variant, allocator, &collection.unique_strings)
 		replace_package_alias(cloned, package_map, collection)
 		append(&types, cloned)
 	}
 
 	value := SymbolUnionValue {
 		types = types[:],
-		poly  = cast(^ast.Field_List)clone_type(union_type.poly_params, collection.allocator, &collection.unique_strings),
+		poly  = cast(^ast.Field_List)clone_type(union_type.poly_params, allocator, &collection.unique_strings),
 	}
 
 	return value
@@ -250,8 +274,9 @@ collect_bitset_field :: proc(
 	collection: ^SymbolCollection,
 	bitset_type: ast.Bit_Set_Type,
 	package_map: map[string]string,
+	allocator: mem.Allocator,
 ) -> SymbolBitSetValue {
-	cloned := clone_type(bitset_type.elem, collection.allocator, &collection.unique_strings)
+	cloned := clone_type(bitset_type.elem, allocator, &collection.unique_strings)
 	replace_package_alias(cloned, package_map, collection)
 
 	return SymbolBitSetValue{expr = cloned}
@@ -261,8 +286,9 @@ collect_slice :: proc(
 	collection: ^SymbolCollection,
 	array: ast.Array_Type,
 	package_map: map[string]string,
+	allocator: mem.Allocator,
 ) -> SymbolSliceValue {
-	elem := clone_type(array.elem, collection.allocator, &collection.unique_strings)
+	elem := clone_type(array.elem, allocator, &collection.unique_strings)
 
 	replace_package_alias(elem, package_map, collection)
 
@@ -273,9 +299,10 @@ collect_array :: proc(
 	collection: ^SymbolCollection,
 	array: ast.Array_Type,
 	package_map: map[string]string,
+	allocator: mem.Allocator,
 ) -> SymbolFixedArrayValue {
-	elem := clone_type(array.elem, collection.allocator, &collection.unique_strings)
-	len := clone_type(array.len, collection.allocator, &collection.unique_strings)
+	elem := clone_type(array.elem, allocator, &collection.unique_strings)
+	len := clone_type(array.len, allocator, &collection.unique_strings)
 
 	replace_package_alias(elem, package_map, collection)
 	replace_package_alias(len, package_map, collection)
@@ -283,9 +310,14 @@ collect_array :: proc(
 	return SymbolFixedArrayValue{expr = elem, len = len}
 }
 
-collect_map :: proc(collection: ^SymbolCollection, m: ast.Map_Type, package_map: map[string]string) -> SymbolMapValue {
-	key := clone_type(m.key, collection.allocator, &collection.unique_strings)
-	value := clone_type(m.value, collection.allocator, &collection.unique_strings)
+collect_map :: proc(
+	collection: ^SymbolCollection,
+	m: ast.Map_Type,
+	package_map: map[string]string,
+	allocator: mem.Allocator,
+) -> SymbolMapValue {
+	key := clone_type(m.key, allocator, &collection.unique_strings)
+	value := clone_type(m.value, allocator, &collection.unique_strings)
 
 	replace_package_alias(key, package_map, collection)
 	replace_package_alias(value, package_map, collection)
@@ -297,8 +329,9 @@ collect_dynamic_array :: proc(
 	collection: ^SymbolCollection,
 	array: ast.Dynamic_Array_Type,
 	package_map: map[string]string,
+	allocator: mem.Allocator,
 ) -> SymbolDynamicArrayValue {
-	elem := clone_type(array.elem, collection.allocator, &collection.unique_strings)
+	elem := clone_type(array.elem, allocator, &collection.unique_strings)
 
 	replace_package_alias(elem, package_map, collection)
 
@@ -309,12 +342,13 @@ collect_matrix :: proc(
 	collection: ^SymbolCollection,
 	mat: ast.Matrix_Type,
 	package_map: map[string]string,
+	allocator: mem.Allocator,
 ) -> SymbolMatrixValue {
-	elem := clone_type(mat.elem, collection.allocator, &collection.unique_strings)
+	elem := clone_type(mat.elem, allocator, &collection.unique_strings)
 
-	y := clone_type(mat.column_count, collection.allocator, &collection.unique_strings)
+	y := clone_type(mat.column_count, allocator, &collection.unique_strings)
 
-	x := clone_type(mat.row_count, collection.allocator, &collection.unique_strings)
+	x := clone_type(mat.row_count, allocator, &collection.unique_strings)
 
 	replace_package_alias(elem, package_map, collection)
 	replace_package_alias(x, package_map, collection)
@@ -327,8 +361,9 @@ collect_multi_pointer :: proc(
 	collection: ^SymbolCollection,
 	array: ast.Multi_Pointer_Type,
 	package_map: map[string]string,
+	allocator: mem.Allocator,
 ) -> SymbolMultiPointerValue {
-	elem := clone_type(array.elem, collection.allocator, &collection.unique_strings)
+	elem := clone_type(array.elem, allocator, &collection.unique_strings)
 
 	replace_package_alias(elem, package_map, collection)
 
@@ -341,13 +376,14 @@ collect_generic :: proc(
 	expr: ^ast.Expr,
 	package_map: map[string]string,
 	uri: string,
+	allocator: mem.Allocator,
 ) -> SymbolGenericValue {
 	//Bit hacky right now, but it's hopefully a temporary solution.
 	//In the c package code it uses a documentation package(builtin).
 	if selector, ok := expr.derived.(^ast.Selector_Expr); ok {
 		if ident, ok := selector.expr.derived.(^ast.Ident); ok {
 			if ident.name == "builtin" && strings.contains(uri, "Odin/core/c/c.odin") {
-				cloned := clone_type(selector.field, collection.allocator, &collection.unique_strings)
+				cloned := clone_type(selector.field, allocator, &collection.unique_strings)
 				replace_package_alias(cloned, package_map, collection)
 				value := SymbolGenericValue {
 					expr = cloned,
@@ -357,7 +393,7 @@ collect_generic :: proc(
 		}
 	}
 
-	cloned := clone_type(expr, collection.allocator, &collection.unique_strings)
+	cloned := clone_type(expr, allocator, &collection.unique_strings)
 	replace_package_alias(cloned, package_map, collection)
 
 	value := SymbolGenericValue {
@@ -367,7 +403,7 @@ collect_generic :: proc(
 	return value
 }
 
-collect_method :: proc(collection: ^SymbolCollection, symbol: Symbol) {
+collect_method :: proc(collection: ^SymbolCollection, symbol: Symbol, allocator: mem.Allocator) {
 	pkg := &collection.packages[symbol.pkg]
 
 	if value, ok := symbol.value.(SymbolProcedureValue); ok {
@@ -401,7 +437,7 @@ collect_method :: proc(collection: ^SymbolCollection, symbol: Symbol) {
 		symbols := &pkg.methods[method]
 
 		if symbols == nil {
-			pkg.methods[method] = make([dynamic]Symbol, collection.allocator)
+			pkg.methods[method] = make([dynamic]Symbol, allocator)
 			symbols = &pkg.methods[method]
 		}
 
@@ -409,7 +445,7 @@ collect_method :: proc(collection: ^SymbolCollection, symbol: Symbol) {
 	}
 }
 
-collect_objc :: proc(collection: ^SymbolCollection, attributes: []^ast.Attribute, symbol: Symbol) {
+collect_objc :: proc(collection: ^SymbolCollection, attributes: []^ast.Attribute, symbol: Symbol, allocator: mem.Allocator) {
 	pkg := &collection.packages[symbol.pkg]
 
 	if value, ok := symbol.value.(SymbolProcedureValue); ok {
@@ -425,8 +461,8 @@ collect_objc :: proc(collection: ^SymbolCollection, attributes: []^ast.Attribute
 				if objc_struct == nil {
 					pkg.objc_structs[struct_name] = {}
 					objc_struct = &pkg.objc_structs[struct_name]
-					objc_struct.functions = make([dynamic]ObjcFunction, 0, 10, collection.allocator)
-					objc_struct.ranges = make([dynamic]common.Range, 0, 10, collection.allocator)
+					objc_struct.functions = make([dynamic]ObjcFunction, 0, 10, allocator)
+					objc_struct.ranges = make([dynamic]common.Range, 0, 10, allocator)
 					objc_struct.pkg = symbol.pkg
 				}
 
@@ -455,6 +491,8 @@ collect_imports :: proc(collection: ^SymbolCollection, file: ast.File, directory
 
 
 collect_symbols :: proc(collection: ^SymbolCollection, file: ast.File, uri: string) -> common.Error {
+	allocator := get_collection_file_allocator(collection, uri)
+
 	forward, _ := filepath.to_slash(file.fullpath, context.temp_allocator)
 	directory := path.dir(forward, context.temp_allocator)
 	package_map := get_package_mapping(file, collection.config, directory)
@@ -488,7 +526,7 @@ collect_symbols :: proc(collection: ^SymbolCollection, file: ast.File, uri: stri
 		case ^ast.Matrix_Type:
 			token = v^
 			token_type = .Type
-			symbol.value = collect_matrix(collection, v^, package_map)
+			symbol.value = collect_matrix(collection, v^, package_map, allocator)
 		case ^ast.Proc_Lit:
 			token = v^
 			token_type = .Function
@@ -501,6 +539,7 @@ collect_symbols :: proc(collection: ^SymbolCollection, file: ast.File, uri: stri
 					v.type.results,
 					package_map,
 					expr.attributes,
+					allocator,
 				)
 			}
 
@@ -520,17 +559,18 @@ collect_symbols :: proc(collection: ^SymbolCollection, file: ast.File, uri: stri
 				v.results,
 				package_map,
 				expr.attributes,
+				allocator,
 			)
 		case ^ast.Proc_Group:
 			token = v^
 			token_type = .Function
 			symbol.value = SymbolProcedureGroupValue {
-				group = clone_type(col_expr, collection.allocator, &collection.unique_strings),
+				group = clone_type(col_expr, allocator, &collection.unique_strings),
 			}
 		case ^ast.Struct_Type:
 			token = v^
 			token_type = .Struct
-			symbol.value = collect_struct_fields(collection, v, package_map, file)
+			symbol.value = collect_struct_fields(collection, v, package_map, file, allocator)
 			symbol.signature = "struct"
 
 			if _, is_objc := get_attribute_objc_class_name(expr.attributes); is_objc {
@@ -542,43 +582,43 @@ collect_symbols :: proc(collection: ^SymbolCollection, file: ast.File, uri: stri
 		case ^ast.Enum_Type:
 			token = v^
 			token_type = .Enum
-			symbol.value = collect_enum_fields(collection, v^, package_map, file)
+			symbol.value = collect_enum_fields(collection, v^, package_map, file, allocator)
 			symbol.signature = "enum"
 		case ^ast.Union_Type:
 			token = v^
 			token_type = .Union
-			symbol.value = collect_union_fields(collection, v^, package_map)
+			symbol.value = collect_union_fields(collection, v^, package_map, allocator)
 			symbol.signature = "union"
 		case ^ast.Bit_Set_Type:
 			token = v^
 			token_type = .Enum
-			symbol.value = collect_bitset_field(collection, v^, package_map)
+			symbol.value = collect_bitset_field(collection, v^, package_map, allocator)
 			symbol.signature = "bitset"
 		case ^ast.Bit_Field_Type:
 			token = v^
 			token_type = .Struct
-			symbol.value = collect_bit_field_fields(collection, v, package_map, file)
+			symbol.value = collect_bit_field_fields(collection, v, package_map, file, allocator)
 			symbol.signature = "bit_field"
 		case ^ast.Map_Type:
 			token = v^
 			token_type = .Type
-			symbol.value = collect_map(collection, v^, package_map)
+			symbol.value = collect_map(collection, v^, package_map, allocator)
 		case ^ast.Array_Type:
 			token = v^
 			token_type = .Type
 			if v.len == nil {
-				symbol.value = collect_slice(collection, v^, package_map)
+				symbol.value = collect_slice(collection, v^, package_map, allocator)
 			} else {
-				symbol.value = collect_array(collection, v^, package_map)
+				symbol.value = collect_array(collection, v^, package_map, allocator)
 			}
 		case ^ast.Dynamic_Array_Type:
 			token = v^
 			token_type = .Type
-			symbol.value = collect_dynamic_array(collection, v^, package_map)
+			symbol.value = collect_dynamic_array(collection, v^, package_map, allocator)
 		case ^ast.Multi_Pointer_Type:
 			token = v^
 			token_type = .Type
-			symbol.value = collect_multi_pointer(collection, v^, package_map)
+			symbol.value = collect_multi_pointer(collection, v^, package_map, allocator)
 		case ^ast.Typeid_Type:
 			if v.specialization == nil {
 				continue
@@ -587,13 +627,13 @@ collect_symbols :: proc(collection: ^SymbolCollection, file: ast.File, uri: stri
 			ident := new_type(ast.Ident, v.pos, v.end, context.temp_allocator)
 			ident.name = "typeid"
 
-			symbol.value = collect_generic(collection, ident, package_map, uri)
+			symbol.value = collect_generic(collection, ident, package_map, uri, allocator)
 		case ^ast.Basic_Lit:
 			token = v^
-			symbol.value = collect_generic(collection, col_expr, package_map, uri)
+			symbol.value = collect_generic(collection, col_expr, package_map, uri, allocator)
 		case ^ast.Ident:
 			token = v^
-			symbol.value = collect_generic(collection, col_expr, package_map, uri)
+			symbol.value = collect_generic(collection, col_expr, package_map, uri, allocator)
 
 			if expr.mutable {
 				token_type = .Variable
@@ -602,7 +642,7 @@ collect_symbols :: proc(collection: ^SymbolCollection, file: ast.File, uri: stri
 			}
 		case:
 			// default
-			symbol.value = collect_generic(collection, col_expr, package_map, uri)
+			symbol.value = collect_generic(collection, col_expr, package_map, uri, allocator)
 
 			if expr.mutable {
 				token_type = .Variable
@@ -620,7 +660,7 @@ collect_symbols :: proc(collection: ^SymbolCollection, file: ast.File, uri: stri
 		symbol.doc = get_doc(expr.docs, collection.allocator)
 		symbol.uri = get_index_unique_string(collection, uri)
 		comment := get_file_comment(file, symbol.range.start.line + 1)
-		symbol.comment = strings.clone(get_comment(comment), collection.allocator)
+		symbol.comment = strings.clone(get_comment(comment), allocator)
 		symbol.flags |= {.Distinct}
 
 		if expr.builtin || strings.contains(uri, "builtin.odin") {
@@ -657,23 +697,23 @@ collect_symbols :: proc(collection: ^SymbolCollection, file: ast.File, uri: stri
 		if pkg, ok = &collection.packages[symbol.pkg]; !ok {
 			collection.packages[symbol.pkg] = {}
 			pkg = &collection.packages[symbol.pkg]
-			pkg.symbols = make(map[string]Symbol, 100, collection.allocator)
-			pkg.methods = make(map[Method][dynamic]Symbol, 100, collection.allocator)
-			pkg.objc_structs = make(map[string]ObjcStruct, 5, collection.allocator)
+			pkg.symbols = make(map[string]Symbol, 100, allocator)
+			pkg.methods = make(map[Method][dynamic]Symbol, 100, allocator)
+			pkg.objc_structs = make(map[string]ObjcStruct, 5, allocator)
 		}
 
 		if .ObjC in symbol.flags {
-			collect_objc(collection, expr.attributes, symbol)
+			collect_objc(collection, expr.attributes, symbol, allocator)
 		}
 
 		if symbol.type == .Function && common.config.enable_fake_method {
-			collect_method(collection, symbol)
+			collect_method(collection, symbol, allocator)
 		}
 
 		if v, ok := pkg.symbols[symbol.name]; !ok || v.name == "" {
 			pkg.symbols[symbol.name] = symbol
 		} else {
-			free_symbol(symbol, collection.allocator)
+			free_symbol(symbol, allocator)
 		}
 	}
 
