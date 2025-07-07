@@ -23,21 +23,11 @@ memory_index_clear_cache :: proc(index: ^MemoryIndex) {
 	index.last_package = nil
 }
 
-memory_index_lookup :: proc(index: ^MemoryIndex, name: string, pkg: string) -> (Symbol, bool) {
-	if index.last_package_name == pkg && index.last_package != nil {
-		return index.last_package[name]
-	}
-
-	if _pkg, ok := &index.collection.packages[pkg]; ok {
-		index.last_package = &_pkg.symbols
-		index.last_package_name = pkg
-		return _pkg.symbols[name]
-	} else {
-		index.last_package = nil
-		index.last_package_name = ""
-	}
-
-	return {}, false
+memory_index_lookup :: proc(index: ^MemoryIndex, name: string, pkg: string) -> (symbol: Symbol, ok: bool) {
+	file_uri := index.collection.packages[pkg] or_return
+	node_uri := file_uri[name] or_return
+	symbol_file := index.collection.files[node_uri] or_return
+	return symbol_file.symbols[name]
 }
 
 memory_index_fuzzy_search :: proc(index: ^MemoryIndex, name: string, pkgs: []string) -> ([]FuzzyResult, bool) {
@@ -48,7 +38,7 @@ memory_index_fuzzy_search :: proc(index: ^MemoryIndex, name: string, pkgs: []str
 	top := 100
 
 	for pkg in pkgs {
-		if pkg, ok := index.collection.packages[pkg]; ok {
+		if pkg, ok := index.collection.files[pkg]; ok {
 			for _, symbol in pkg.symbols {
 				if score, ok := common.fuzzy_match(fuzzy_matcher, symbol.name); ok == 1 {
 					result := FuzzyResult {

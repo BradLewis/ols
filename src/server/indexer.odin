@@ -30,6 +30,10 @@ lookup :: proc(name: string, pkg: string, loc := #caller_location) -> (Symbol, b
 		return {}, false
 	}
 
+
+	for k, v in indexer.index.collection.files {
+		log.info(k, ":", v)
+	}
 	if symbol, ok := memory_index_lookup(&indexer.index, name, pkg); ok {
 		return symbol, true
 	}

@@ -1630,8 +1630,15 @@ internal_resolve_type_identifier :: proc(ast_context: ^AstContext, node: ast.Ide
 			}
 		}
 
+log.info("here?")
+	uri := common.create_uri(node.pos.file, ast_context.allocator)
+	log.info(node)
+	log.info(uri)
+	log.info(ast_context.document_package)
+	log.info(ast_context.current_package)
+
 		//last option is to check the index
-		if symbol, ok := lookup(node.name, ast_context.current_package); ok {
+		if symbol, ok := lookup(node.name, uri.uri); ok {
 			return resolve_symbol_return(ast_context, symbol)
 		}
 
@@ -2142,7 +2149,8 @@ resolve_location_identifier :: proc(ast_context: ^AstContext, node: ast.Ident) -
 		return symbol, true
 	}
 
-	if symbol, ok := lookup(node.name, ast_context.document_package); ok {
+	uri := common.create_uri(node.pos.file, ast_context.allocator)
+	if symbol, ok := lookup(node.name, uri.uri); ok {
 		return symbol, ok
 	}
 

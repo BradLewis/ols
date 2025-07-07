@@ -177,24 +177,7 @@ remove_index_file :: proc(uri: common.Uri) -> common.Error {
 	}
 
 	corrected_uri := common.create_uri(fullpath, context.temp_allocator)
-
-	for k, &v in indexer.index.collection.packages {
-		for k2, v2 in v.symbols {
-			if strings.equal_fold(corrected_uri.uri, v2.uri) {
-				delete_key(&v.symbols, k2)
-			}
-		}
-
-		for method, &symbols in v.methods {
-			for i := len(symbols) - 1; i >= 0; i -= 1 {
-				#no_bounds_check symbol := symbols[i]
-				if strings.equal_fold(corrected_uri.uri, symbol.uri) {
-					unordered_remove(&symbols, i)
-				}
-			}
-		}
-	}
-
+	// TODO: remove file from the index
 	return .None
 }
 
@@ -246,24 +229,6 @@ index_file :: proc(uri: common.Uri, text: string) -> common.Error {
 	}
 
 	corrected_uri := common.create_uri(fullpath, context.temp_allocator)
-
-	for k, &v in indexer.index.collection.packages {
-		for k2, v2 in v.symbols {
-			if corrected_uri.uri == v2.uri {
-				delete_key(&v.symbols, k2)
-			}
-		}
-
-		for method, &symbols in v.methods {
-			for i := len(symbols) - 1; i >= 0; i -= 1 {
-				#no_bounds_check symbol := symbols[i]
-				if corrected_uri.uri == symbol.uri {
-					unordered_remove(&symbols, i)
-				}
-			}
-		}
-	}
-
 	if ret := collect_symbols(&indexer.index.collection, file, corrected_uri.uri); ret != .None {
 		log.errorf("failed to collect symbols on save %v", ret)
 	}

@@ -16,7 +16,8 @@ import "src:common"
 SymbolCollection :: struct {
 	allocator:      mem.Allocator,
 	config:         ^common.Config,
-	packages:       map[string]SymbolPackage,
+	packages:		map[string]map[string]string, // maps a node to it's file uri
+	files:          map[string]SymbolFile,
 	unique_strings: map[string]string, //store all our strings as unique strings and reference them to save memory.
 	arenas:			map[string]^virtual.Arena,
 }
@@ -37,7 +38,7 @@ Method :: struct {
 	name: string,
 }
 
-SymbolPackage :: struct {
+SymbolFile :: struct {
 	symbols:      map[string]Symbol,
 	objc_structs: map[string]ObjcStruct, //mapping from struct name to function
 	methods:      map[Method][dynamic]Symbol,
@@ -70,7 +71,8 @@ make_symbol_collection :: proc(allocator := context.allocator, config: ^common.C
 	return SymbolCollection {
 		allocator = allocator,
 		config = config,
-		packages = make(map[string]SymbolPackage, 16, allocator),
+		packages = make(map[string]map[string]string, 16, allocator),
+		files = make(map[string]SymbolFile, 16, allocator),
 		unique_strings = make(map[string]string, 16, allocator),
 		arenas = make(map[string]^virtual.Arena, 16, allocator),
 	}
@@ -405,7 +407,7 @@ collect_generic :: proc(
 }
 
 collect_method :: proc(collection: ^SymbolCollection, symbol: Symbol, allocator: mem.Allocator) {
-	pkg := &collection.packages[symbol.pkg]
+	pkg := &collection.files[symbol.pkg]
 
 	if value, ok := symbol.value.(SymbolProcedureValue); ok {
 		if len(value.arg_types) == 0 {
@@ -447,7 +449,7 @@ collect_method :: proc(collection: ^SymbolCollection, symbol: Symbol, allocator:
 }
 
 collect_objc :: proc(collection: ^SymbolCollection, attributes: []^ast.Attribute, symbol: Symbol, allocator: mem.Allocator) {
-	pkg := &collection.packages[symbol.pkg]
+	pkg := &collection.files[symbol.pkg]
 
 	if value, ok := symbol.value.(SymbolProcedureValue); ok {
 		objc_name, found_objc_name := get_attribute_objc_name(attributes)
@@ -484,12 +486,11 @@ collect_objc :: proc(collection: ^SymbolCollection, attributes: []^ast.Attribute
 collect_imports :: proc(collection: ^SymbolCollection, file: ast.File, directory: string) {
 	_pkg := get_index_unique_string(collection, directory)
 
-	if _pkg, ok := collection.packages[_pkg]; ok {
+	if _pkg, ok := collection.files[_pkg]; ok {
 
 	}
 
 }
-
 
 collect_symbols :: proc(collection: ^SymbolCollection, file: ast.File, uri: string) -> common.Error {
 	allocator := get_collection_file_allocator(collection, uri)
@@ -658,7 +659,7 @@ collect_symbols :: proc(collection: ^SymbolCollection, file: ast.File, uri: stri
 		symbol.range = common.get_token_range(expr.name_expr, file.src)
 		symbol.name = get_index_unique_string(collection, name)
 		symbol.type = token_type
-		symbol.doc = get_doc(expr.docs, collection.allocator)
+		symbol.doc = get_doc(expr.docs, allocator)
 		symbol.uri = get_index_unique_string(collection, uri)
 		comment := get_file_comment(file, symbol.range.start.line + 1)
 		symbol.comment = strings.clone(get_comment(comment), allocator)
@@ -692,16 +693,16 @@ collect_symbols :: proc(collection: ^SymbolCollection, file: ast.File, uri: stri
 		}
 
 
-		pkg: ^SymbolPackage
-		ok: bool
-
-		if pkg, ok = &collection.packages[symbol.pkg]; !ok {
+		if pkg, ok := collection.packages[symbol.pkg]; !ok {
 			collection.packages[symbol.pkg] = {}
-			pkg = &collection.packages[symbol.pkg]
-			pkg.symbols = make(map[string]Symbol, 100, allocator)
-			pkg.methods = make(map[Method][dynamic]Symbol, 100, allocator)
-			pkg.objc_structs = make(map[string]ObjcStruct, 5, allocator)
 		}
+		pkg := &collection.packages[symbol.pkg]
+		pkg[symbol.name] = symbol.uri
+
+		file_collection := &collection.files[symbol.uri]
+		file_collection.symbols = make(map[string]Symbol, 100, allocator)
+		file_collection.methods = make(map[Method][dynamic]Symbol, 100, allocator)
+		file_collection.objc_structs = make(map[string]ObjcStruct, 5, allocator)
 
 		if .ObjC in symbol.flags {
 			collect_objc(collection, expr.attributes, symbol, allocator)
@@ -711,9 +712,7 @@ collect_symbols :: proc(collection: ^SymbolCollection, file: ast.File, uri: stri
 			collect_method(collection, symbol, allocator)
 		}
 
-		if v, ok := pkg.symbols[symbol.name]; !ok || v.name == "" {
-			pkg.symbols[symbol.name] = symbol
-		}
+		file_collection.symbols[symbol.name] = symbol
 	}
 
 	collect_imports(collection, file, directory)

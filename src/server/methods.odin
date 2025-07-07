@@ -59,7 +59,7 @@ append_method_completion :: proc(
 		return
 	}
 
-	for k, v in indexer.index.collection.packages {
+	for k, v in indexer.index.collection.files {
 		method := Method {
 			name = selector_symbol.name,
 			pkg  = selector_symbol.pkg,
