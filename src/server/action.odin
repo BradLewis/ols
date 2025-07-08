@@ -1,5 +1,7 @@
 package server
 
+import "core:strings"
+
 import "src:common"
 
 CodeActionKind :: string
@@ -30,18 +32,22 @@ CodeAction :: struct {
 }
 
 get_code_actions :: proc(document: ^Document, range: common.Range) -> ([]CodeAction, bool) {
-	//edit: TextEdit = {
-	//	range = range,
-	//	newText = "hello!"
-	//}
-	actions: []CodeAction = {
-		{title = "Do nothing", kind = "refactor.rewrite", isPreferred = true, edit = {} },
-		{title = "Do another nothing", kind = "refactor.rewrite", isPreferred = false},
+	edit: TextEdit = {
+		range = range,
+		newText = "hello!"
 	}
-	w: WorkspaceEdit = {
-		changes = {}
+	changes := make(map[string][dynamic]TextEdit, 0, context.temp_allocator)
+	changes[strings.clone(document.uri.uri, context.temp_allocator)] = make([dynamic]TextEdit, context.temp_allocator)
+	append(&changes[document.uri.uri], edit)
+	workspace: WorkspaceEdit
+
+	workspace.changes = make(map[string][]TextEdit, len(changes), context.temp_allocator)
+
+	for k, v in changes {
+		workspace.changes[k] = v[:]
+	}
+	actions: []CodeAction = {
+		{title = "Do nothing", kind = "refactor.rewrite", isPreferred = true, edit = workspace },
 	}
 	return actions, true
-
-	//return {}, false
 }
