@@ -3855,3 +3855,76 @@ ast_completion_struct_field_enum :: proc(t: ^testing.T) {
 	}
 	test.expect_completion_details(t, &source, "", {"Bar.foo: test.Foo"})
 }
+
+@(test)
+ast_completion_enum_switch_cases_after :: proc(t: ^testing.T) {
+	source := test.Source {
+		main = `package test
+
+		Foo :: enum {
+			A,
+			B,
+			C,
+		}
+
+		main :: proc() {
+			foo: Foo
+			switch foo {
+			case .{*}
+			case .B:
+			}
+		}
+		`,
+	}
+	test.expect_completion_details(t, &source, "", {"A", "C"}, {"B"})
+}
+
+@(test)
+ast_completion_enum_switch_cases_after_incomplete_name :: proc(t: ^testing.T) {
+	source := test.Source {
+		main = `package test
+
+		Foo :: enum {
+			AA,
+			AB,
+			AC,
+		}
+
+		main :: proc() {
+			foo: Foo
+			switch foo {
+			case .A{*}
+			case .AB:
+			}
+		}
+		`,
+	}
+	test.expect_completion_details(t, &source, "", {"AA", "AC"}, {"AB"})
+}
+
+@(test)
+ast_completion_union_switch_cases_after :: proc(t: ^testing.T) {
+	source := test.Source {
+		main = `package test
+		Foo1 :: struct{}
+		Foo2 :: struct{}
+		Foo3 :: struct{}
+		Foo :: union {
+			Foo1,
+			Foo2,
+			Foo3,
+		}
+
+		main :: proc() {
+			foo: Foo
+
+			switch v in Foo {
+			case F{*}
+			case Foo1:
+			}
+		}
+		`,
+	}
+
+	test.expect_completion_details(t, &source, "", {"Foo2", "Foo3"}, {"Foo1"})
+}
