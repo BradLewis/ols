@@ -3928,3 +3928,53 @@ ast_completion_union_switch_cases_after :: proc(t: ^testing.T) {
 
 	test.expect_completion_details(t, &source, "", {"Foo2", "Foo3"}, {"Foo1"})
 }
+
+@(test)
+ast_completion_enum_switch_case_no_period :: proc(t: ^testing.T) {
+	source := test.Source {
+		main = `package test
+
+		Foo :: enum {
+			A,
+			B,
+			C,
+		}
+
+		main :: proc() {
+			foo: Foo
+			switch foo {
+			case {*}
+			case .A:
+			}
+		}
+		`,
+	}
+	test.expect_completion_details(t, &source, "", {"B", "C"}, {"A"})
+}
+
+@(test)
+ast_completion_union_switch_cases_no_input :: proc(t: ^testing.T) {
+	source := test.Source {
+		main = `package test
+		Foo1 :: struct{}
+		Foo2 :: struct{}
+		Foo3 :: struct{}
+		Foo :: union {
+			Foo1,
+			Foo2,
+			Foo3,
+		}
+
+		main :: proc() {
+			foo: Foo
+
+			switch v in Foo {
+			case {*}
+			case Foo1:
+			}
+		}
+		`,
+	}
+
+	test.expect_completion_details(t, &source, "", {"Foo2", "Foo3"}, {"Foo1"})
+}

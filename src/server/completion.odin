@@ -27,6 +27,7 @@ Completion_Type :: enum {
 	Implicit,
 	Selector,
 	Switch_Type,
+	Type_Switch_Type,
 	Identifier,
 	Comp_Lit,
 	Directive,
@@ -106,8 +107,13 @@ get_completion_list :: proc(
 		completion_type = .Directive
 	}
 
+
 	if position_context.implicit {
 		completion_type = .Implicit
+	}
+
+	if position_context.switch_stmt != nil && position_context.case_clause != nil {
+		completion_type = .Switch_Type
 	}
 
 	if position_context.import_stmt != nil {
@@ -127,7 +133,7 @@ get_completion_list :: proc(
 
 			if symbol, ok := resolve_type_expression(&ast_context, assign.rhs[0]); ok {
 				if union_value, ok := symbol.value.(SymbolUnionValue); ok {
-					completion_type = .Switch_Type
+					completion_type = .Type_Switch_Type
 				}
 			}
 		}
@@ -150,6 +156,8 @@ get_completion_list :: proc(
 	case .Selector:
 		get_selector_completion(&ast_context, &position_context, &list)
 	case .Switch_Type:
+		get_switch_completion(&ast_context, &position_context, &list)
+	case .Type_Switch_Type:
 		get_type_switch_completion(&ast_context, &position_context, &list)
 	case .Directive:
 		get_directive_completion(&ast_context, &position_context, &list)
@@ -812,42 +820,6 @@ get_implicit_completion :: proc(
 	}
 
 	//enum switch infer
-	if position_context.switch_stmt != nil &&
-	   position_context.case_clause != nil &&
-	   position_context.switch_stmt.cond != nil {
-		used_enums := make(map[string]bool, 5, context.temp_allocator)
-
-		if block, ok := position_context.switch_stmt.body.derived.(^ast.Block_Stmt); ok {
-			for stmt in block.stmts {
-				if case_clause, ok := stmt.derived.(^ast.Case_Clause); ok {
-					for name in case_clause.list {
-						if implicit, ok := name.derived.(^ast.Implicit_Selector_Expr); ok {
-							used_enums[implicit.field.name] = true
-						}
-					}
-				}
-			}
-		}
-
-		if enum_value, ok := unwrap_enum(ast_context, position_context.switch_stmt.cond); ok {
-			for name in enum_value.names {
-				if name in used_enums {
-					continue
-				}
-
-				item := CompletionItem {
-					label  = name,
-					kind   = .EnumMember,
-					detail = name,
-				}
-
-				append(&items, item)
-			}
-
-			list.items = items[:]
-			return
-		}
-	}
 
 	if position_context.assign != nil &&
 	   position_context.assign.lhs != nil &&
@@ -1614,6 +1586,48 @@ get_used_switch_name :: proc(node: ^ast.Expr) -> (string, bool) {
 		return get_used_switch_name(n.elem)
 	}
 	return "", false
+}
+
+get_switch_completion :: proc(
+	ast_context: ^AstContext,
+	position_context: ^DocumentPositionContext,
+	list: ^CompletionList,
+) {
+	items := make([dynamic]CompletionItem, context.temp_allocator)
+	list.isIncomplete = false
+
+	used_enums := make(map[string]bool, 5, context.temp_allocator)
+
+	if block, ok := position_context.switch_stmt.body.derived.(^ast.Block_Stmt); ok {
+		for stmt in block.stmts {
+			if case_clause, ok := stmt.derived.(^ast.Case_Clause); ok {
+				for name in case_clause.list {
+					if implicit, ok := name.derived.(^ast.Implicit_Selector_Expr); ok {
+						used_enums[implicit.field.name] = true
+					}
+				}
+			}
+		}
+	}
+
+	if enum_value, ok := unwrap_enum(ast_context, position_context.switch_stmt.cond); ok {
+		for name in enum_value.names {
+			if name in used_enums {
+				continue
+			}
+
+			item := CompletionItem {
+				label  = name,
+				kind   = .EnumMember,
+				detail = name,
+			}
+
+			append(&items, item)
+		}
+
+		list.items = items[:]
+		return
+	}
 }
 
 get_type_switch_completion :: proc(
