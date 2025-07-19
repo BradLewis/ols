@@ -1438,6 +1438,37 @@ get_identifier_completion :: proc(
 		}
 	}
 
+	expected_symbol: Maybe(Symbol)
+
+	if position_context.call != nil {
+		if call, ok := position_context.call.derived.(^ast.Call_Expr); ok {
+			parameter_index, parameter_ok := find_position_in_call_param(position_context, call^)
+			if symbol, ok := resolve_type_expression(ast_context, call.expr); ok && parameter_ok {
+				set_ast_package_set_scoped(ast_context, symbol.pkg)
+
+				//Selector call expression always set the first argument to be the type of struct called, so increment it.
+				if position_context.selector_expr != nil {
+					if selector_call, ok := position_context.selector_expr.derived.(^ast.Selector_Call_Expr); ok {
+						if selector_call.call == position_context.call {
+							parameter_index += 1
+						}
+					}
+				}
+
+				if proc_value, ok := symbol.value.(SymbolProcedureValue); ok {
+					arg_type, arg_type_ok := get_proc_arg_type_from_index(proc_value, parameter_index)
+					if !arg_type_ok {
+						return
+					}
+
+					if arg_symbol, arg_symbol_ok := resolve_type_expression(ast_context, arg_type.type); arg_symbol_ok {
+						expected_symbol = arg_symbol
+					}
+				}
+			}
+		}
+	}
+
 	slice.sort_by(combined[:], proc(i, j: CombinedResult) -> bool {
 		return j.score < i.score
 	})
@@ -1478,6 +1509,11 @@ get_identifier_completion :: proc(
 
 			append(&items, item)
 		} else {
+			if expected, ok := expected_symbol.?; ok {
+				if should_skip_symbol(ast_context, expected, result.symbol) {
+					continue
+				}
+			}
 			item := CompletionItem {
 				label         = result.symbol.name,
 				documentation = result.symbol.doc,
@@ -1502,6 +1538,45 @@ get_identifier_completion :: proc(
 	append_non_imported_packages(ast_context, position_context, &items)
 
 	list.items = items[:]
+}
+
+should_skip_symbol :: proc(ast_context: ^AstContext, expected, result: Symbol) -> bool {
+	if result.type == .Package {
+		return false
+	}
+
+	to_compare := result
+	if value, ok := result.value.(SymbolProcedureValue); ok {
+		// first we check if the actual proc is what we want
+		if expected.range == to_compare.range && expected.uri == to_compare.uri {
+			return false
+		}
+
+		// if not we check the return type
+		if len(value.return_types) != 1 {
+			return true
+		}
+		if return_symbol, ok := resolve_type_expression(ast_context, value.return_types[0].type); ok {
+			to_compare = return_symbol
+		}
+	}
+
+	if expected.type == .Keyword {
+		if same, ok := are_symbol_untyped_basic_same_typed(expected, to_compare); ok {
+			return !same
+		} else if same, ok := are_symbol_untyped_basic_same_typed(to_compare, expected); ok {
+			return !same
+		} else if are_symbol_basic_same_keywords(expected, to_compare) {
+			return false
+		}
+		return true
+	}
+
+	if expected.range != to_compare.range || expected.uri != to_compare.uri {
+		return true
+	}
+
+	return false
 }
 
 get_package_completion :: proc(

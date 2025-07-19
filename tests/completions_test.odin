@@ -3906,3 +3906,56 @@ ast_completion_using_aliased_package :: proc(t: ^testing.T) {
 
 	test.expect_completion_details(t, &source, ".", {"my_package.foo: proc()"})
 }
+
+@(test)
+ast_completion_proc_param_basic_variable_return :: proc(t: ^testing.T) {
+	source := test.Source {
+		main = `package test
+
+		bar :: proc(a, b: int) -> int {
+			return 1
+		}
+
+		foo :: proc(a: int) {}
+
+		main :: proc() {
+			foo(b{*})
+		}
+		`,
+	}
+	test.expect_completion_details(t, &source, "", {"test.bar: proc(a, b: int) -> int"})
+}
+
+@(test)
+ast_completion_proc_param_struct :: proc(t: ^testing.T) {
+	source := test.Source {
+		main = `package test
+
+		Bar :: struct{}
+
+		foo :: proc(bar: Bar) {}
+
+		main :: proc() {
+			bar := Bar{}
+			foo(b{*})
+		}
+		`,
+	}
+	test.expect_completion_details(t, &source, "", {"test.bar: test.Bar", "test.Bar: struct {..}"})
+}
+
+@(test)
+ast_completion_proc_param_different_int_types :: proc(t: ^testing.T) {
+	source := test.Source {
+		main = `package test
+
+		foo :: proc(a: i64) {}
+
+		main :: proc() {
+			bar := 0
+			foo(b{*})
+		}
+		`,
+	}
+	test.expect_completion_details(t, &source, "", {"test.bar: int"})
+}
