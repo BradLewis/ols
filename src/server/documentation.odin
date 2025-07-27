@@ -106,6 +106,7 @@ keywords_docs: map[string]bool = {
 
 // Adds signature and docs information to the provided symbol
 build_documentation :: proc(ast_context: ^AstContext, symbol: ^Symbol, short_signature := true) {
+	log.info(symbol.signature, symbol)
 	if short_signature {
 		symbol.signature = get_short_signature(ast_context, symbol)
 	} else {
@@ -300,10 +301,6 @@ get_signature :: proc(ast_context: ^AstContext, symbol: ^Symbol) -> string {
 }
 
 get_short_signature :: proc(ast_context: ^AstContext, symbol: ^Symbol) -> string {
-	if symbol.signature != "" {
-		return symbol.signature
-	}
-
 	is_variable := symbol.type == .Variable
 
 	pointer_prefix := repeat("^", symbol.pointers, ast_context.allocator)

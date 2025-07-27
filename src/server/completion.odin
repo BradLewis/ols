@@ -205,6 +205,17 @@ convert_completion_results :: proc(
 	for result in top_results {
 		result := result
 		if item, ok := result.completion_item.?; ok {
+			if common.config.enable_label_details {
+				item.labelDetails = CompletionItemLabelDetails {
+					detail = item.detail,
+				}
+			}
+			// temporary as we move things to use the symbols directly
+			if item.documentation == nil {
+				item.documentation = item.detail
+			} else if s, ok := item.documentation.(string); ok && s == "" {
+				item.documentation = item.detail
+			}
 			append(&items, item)
 			continue
 		}
@@ -241,11 +252,12 @@ convert_completion_results :: proc(
 			continue
 		}
 
-		build_documentation(ast_context, &result.symbol, false)
+		build_documentation(ast_context, &result.symbol, true)
 		item := CompletionItem {
 			label         = result.symbol.name,
 			documentation = write_hover_content(ast_context, result.symbol)
 		}
+		log.info(result.symbol)
 		if common.config.enable_label_details {
 			// TODO: compute
 			details := CompletionItemLabelDetails{}
@@ -393,8 +405,8 @@ get_comp_lit_completion :: proc(
 						continue
 					}
 
-					construct_struct_field_symbol(&symbol, symbol.name, v, i)
-					append(results, CompletionResult{symbol = symbol})
+					construct_struct_field_symbol(&resolved, symbol.name, v, i)
+					append(results, CompletionResult{symbol = resolved})
 				}
 			}
 		case SymbolBitFieldValue:
@@ -410,8 +422,8 @@ get_comp_lit_completion :: proc(
 						continue
 					}
 
-					construct_bit_field_field_symbol(&symbol, symbol.name, v, i)
-					append(results, CompletionResult{symbol = symbol})
+					construct_bit_field_field_symbol(&resolved, symbol.name, v, i)
+					append(results, CompletionResult{symbol = resolved})
 				}
 			}
 		case SymbolFixedArrayValue:
@@ -699,16 +711,7 @@ get_selector_completion :: proc(
 				}
 
 				construct_struct_field_symbol(&symbol, selector.name, v, i)
-				build_documentation(ast_context, &symbol)
-
-				item := CompletionItem {
-					label         = name,
-					kind          = .Field,
-					detail        = concatenate_symbol_information(ast_context, symbol),
-					documentation = symbol.doc,
-				}
-
-				append(results, CompletionResult{completion_item = item})
+				append(results, CompletionResult{symbol = symbol})
 			} else {
 				//just give some generic symbol with name.
 				item := CompletionItem {
@@ -1423,9 +1426,12 @@ get_identifier_completion :: proc(
 
 			ident := new_type(ast.Ident, {offset = local_offset}, {offset = local_offset}, context.temp_allocator)
 			ident.name = k
+			log.info(ident.name)
 
 			if symbol, ok := resolve_type_identifier(ast_context, ident^); ok {
 				if score, ok := common.fuzzy_match(matcher, ident.name); ok == 1 {
+					symbol.type_name = symbol.name
+					symbol.type_pkg = symbol.pkg
 					symbol.name = clean_ident(ident.name)
 					append(results, CompletionResult{score = score * 1.7, symbol = symbol})
 				}
