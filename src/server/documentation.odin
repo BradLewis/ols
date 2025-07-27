@@ -190,12 +190,12 @@ get_signature :: proc(ast_context: ^AstContext, symbol: ^Symbol) -> string {
 		return strings.to_string(sb)
 	case SymbolStructValue:
 		sb := strings.builder_make(ast_context.allocator)
-		if symbol.type_name != "" {
-			if symbol.type_pkg == "" {
-				fmt.sbprintf(&sb, "%s%s :: ", pointer_prefix, symbol.type_name)
+		if symbol.variable_name != "" {
+			if symbol.variable_pkg == "" {
+				fmt.sbprintf(&sb, "%s%s :: ", pointer_prefix, symbol.variable_name)
 			} else {
-				pkg_name := get_pkg_name(ast_context, symbol.type_pkg)
-				fmt.sbprintf(&sb, "%s%s.%s :: ", pointer_prefix, pkg_name, symbol.type_name)
+				pkg_name := get_pkg_name(ast_context, symbol.variable_pkg)
+				fmt.sbprintf(&sb, "%s%s.%s :: ", pointer_prefix, pkg_name, symbol.variable_name)
 			}
 		} else if is_variable {
 			append_variable_full_name(&sb, ast_context, symbol, pointer_prefix)
@@ -242,9 +242,9 @@ get_signature :: proc(ast_context: ^AstContext, symbol: ^Symbol) -> string {
 		return strings.to_string(sb)
 	case SymbolProcedureValue:
 		sb := strings.builder_make(ast_context.allocator)
-		if symbol.type_pkg != "" && symbol.type_name != "" {
-			pkg_name := get_pkg_name(ast_context, symbol.type_pkg)
-			fmt.sbprintf(&sb, "%s%s.%s :: ", pointer_prefix, pkg_name, symbol.type_name)
+		if symbol.variable_pkg != "" && symbol.variable_name != "" {
+			pkg_name := get_pkg_name(ast_context, symbol.variable_pkg)
+			fmt.sbprintf(&sb, "%s%s.%s :: ", pointer_prefix, pkg_name, symbol.variable_name)
 		}
 		write_procedure_symbol_signature(&sb, v, detailed_signature=true)
 		return strings.to_string(sb)
@@ -253,12 +253,12 @@ get_signature :: proc(ast_context: ^AstContext, symbol: ^Symbol) -> string {
 		if is_variable {
 			append_variable_full_name(&sb, ast_context, symbol, pointer_prefix)
 			strings.write_string(&sb, " :: ")
-		} else if symbol.type_name != "" {
-			if symbol.type_pkg == "" {
-				fmt.sbprintf(&sb, "%s%s :: ", pointer_prefix, symbol.type_name)
+		} else if symbol.variable_name != "" {
+			if symbol.variable_pkg == "" {
+				fmt.sbprintf(&sb, "%s%s :: ", pointer_prefix, symbol.variable_name)
 			} else {
-				pkg_name := get_pkg_name(ast_context, symbol.type_pkg)
-				fmt.sbprintf(&sb, "%s%s.%s :: ", pointer_prefix, pkg_name, symbol.type_name)
+				pkg_name := get_pkg_name(ast_context, symbol.variable_pkg)
+				fmt.sbprintf(&sb, "%s%s.%s :: ", pointer_prefix, pkg_name, symbol.variable_name)
 			}
 		}
 		strings.write_string(&sb, "bit_field ")
@@ -307,7 +307,7 @@ get_short_signature :: proc(ast_context: ^AstContext, symbol: ^Symbol) -> string
 	#partial switch v in symbol.value {
 	case SymbolBasicValue:
 		sb := strings.builder_make(ast_context.allocator)
-		if symbol.type_name != "" {
+		if symbol.variable_name != "" {
 			write_symbol_type_information(ast_context, &sb, symbol, pointer_prefix)
 		} else if .Distinct in symbol.flags {
 			if symbol.type == .Keyword {
@@ -331,7 +331,7 @@ get_short_signature :: proc(ast_context: ^AstContext, symbol: ^Symbol) -> string
 		sb := strings.builder_make(ast_context.allocator)
 		if is_variable {
 			append_variable_full_name(&sb, ast_context, symbol, pointer_prefix)
-		} else if symbol.type_name != "" {
+		} else if symbol.variable_name != "" {
 			write_symbol_type_information(ast_context, &sb, symbol, pointer_prefix)
 		} else {
 			strings.write_string(&sb, pointer_prefix)
@@ -347,9 +347,9 @@ get_short_signature :: proc(ast_context: ^AstContext, symbol: ^Symbol) -> string
 		return strings.to_string(sb)
 	case SymbolProcedureValue:
 		sb := strings.builder_make(ast_context.allocator)
-		if symbol.type_pkg != "" && symbol.type_name != "" {
-			pkg_name := get_pkg_name(ast_context, symbol.type_pkg)
-			fmt.sbprintf(&sb, "%s%s.%s :: ", pointer_prefix, pkg_name, symbol.type_name)
+		if symbol.variable_pkg != "" && symbol.variable_name != "" {
+			pkg_name := get_pkg_name(ast_context, symbol.variable_pkg)
+			fmt.sbprintf(&sb, "%s%s.%s :: ", pointer_prefix, pkg_name, symbol.variable_name)
 		}
 		write_procedure_symbol_signature(&sb, v, detailed_signature=false)
 		return strings.to_string(sb)
@@ -359,7 +359,7 @@ get_short_signature :: proc(ast_context: ^AstContext, symbol: ^Symbol) -> string
 		sb := strings.builder_make(ast_context.allocator)
 		if is_variable {
 			append_variable_full_name(&sb, ast_context, symbol, pointer_prefix)
-		} else if symbol.type_name != "" {
+		} else if symbol.variable_name != "" {
 			write_symbol_type_information(ast_context, &sb, symbol, pointer_prefix)
 		} else {
 			strings.write_string(&sb, pointer_prefix)
@@ -370,7 +370,7 @@ get_short_signature :: proc(ast_context: ^AstContext, symbol: ^Symbol) -> string
 		sb := strings.builder_make(ast_context.allocator)
 		if is_variable {
 			append_variable_full_name(&sb, ast_context, symbol, pointer_prefix)
-		} else if symbol.type_name != "" {
+		} else if symbol.variable_name != "" {
 			write_symbol_type_information(ast_context, &sb, symbol, pointer_prefix)
 		} else {
 			strings.write_string(&sb, pointer_prefix)
@@ -381,7 +381,7 @@ get_short_signature :: proc(ast_context: ^AstContext, symbol: ^Symbol) -> string
 		sb := strings.builder_make(ast_context.allocator)
 		if is_variable {
 			append_variable_full_name(&sb, ast_context, symbol, pointer_prefix)
-		} else if symbol.type_name != "" {
+		} else if symbol.variable_name != "" {
 			write_symbol_type_information(ast_context, &sb, symbol, pointer_prefix)
 		} else {
 			fmt.sbprintf(&sb, "%sbit_field ", pointer_prefix)
@@ -459,16 +459,16 @@ get_bit_field_field_signature :: proc(value: SymbolBitFieldValue, index: int, al
 
 write_symbol_type_information :: proc(ast_context: ^AstContext, sb: ^strings.Builder, symbol: ^Symbol, pointer_prefix: string) {
 	append_type_pkg := false
-	pkg_name := get_pkg_name(ast_context, symbol.type_pkg)
+	pkg_name := get_pkg_name(ast_context, symbol.variable_pkg)
 	if pkg_name != "" {
-		if _, ok := keywords_docs[symbol.type_name]; !ok {
+		if _, ok := keywords_docs[symbol.variable_name]; !ok {
 			append_type_pkg = true
 		}
 	}
 	if append_type_pkg {
-		fmt.sbprintf(sb, "%s%s.%s", pointer_prefix, pkg_name, symbol.type_name)
+		fmt.sbprintf(sb, "%s%s.%s", pointer_prefix, pkg_name, symbol.variable_name)
 	} else {
-		fmt.sbprintf(sb, "%s%s", pointer_prefix, symbol.type_name)
+		fmt.sbprintf(sb, "%s%s", pointer_prefix, symbol.variable_name)
 	}
 }
 

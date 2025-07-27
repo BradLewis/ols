@@ -2501,8 +2501,8 @@ resolve_type_location_proc_param_name :: proc(
 	reset_ast_context(ast_context)
 	if value, ok := call_symbol.value.(SymbolProcedureValue); ok {
 		if symbol, ok := resolve_type_expression(ast_context, position_context.field_value.value); ok {
-			symbol.type_pkg = symbol.pkg
-			symbol.type_name = symbol.name
+			symbol.variable_pkg = symbol.pkg
+			symbol.variable_name = symbol.name
 			symbol.pkg = call_symbol.name
 			symbol.name = ident.name
 			return symbol, true

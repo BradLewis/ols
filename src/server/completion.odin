@@ -1430,8 +1430,8 @@ get_identifier_completion :: proc(
 
 			if symbol, ok := resolve_type_identifier(ast_context, ident^); ok {
 				if score, ok := common.fuzzy_match(matcher, ident.name); ok == 1 {
-					symbol.type_name = symbol.name
-					symbol.type_pkg = symbol.pkg
+					symbol.variable_name = symbol.name
+					symbol.variable_pkg = symbol.pkg
 					symbol.name = clean_ident(ident.name)
 					append(results, CompletionResult{score = score * 1.7, symbol = symbol})
 				}

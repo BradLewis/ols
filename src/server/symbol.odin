@@ -175,19 +175,19 @@ SymbolFlag :: enum {
 SymbolFlags :: bit_set[SymbolFlag]
 
 Symbol :: struct {
-	range:     common.Range, //the range of the symbol in the file
-	uri:       string, //uri of the file the symbol resides
-	pkg:       string, //absolute directory path where the symbol resides
-	name:      string, //name of the symbol
-	doc:       string,
-	comment:   string,
-	signature: string, //type signature
-	type:      SymbolType,
-	type_pkg:  string,
-	type_name: string,
-	value:     SymbolValue,
-	pointers:  int, //how many `^` are applied to the symbol
-	flags:     SymbolFlags,
+	range:         common.Range, //the range of the symbol in the file
+	uri:           string, //uri of the file the symbol resides
+	pkg:           string, //absolute directory path where the symbol resides
+	name:          string, //name of the symbol
+	doc:           string,
+	comment:       string,
+	signature:     string, //type signature
+	type:          SymbolType,
+	variable_name: string, // if the symbol is for a variable/field, this is the name of the variable/field
+	variable_pkg:  string,
+	value:         SymbolValue,
+	pointers:      int, //how many `^` are applied to the symbol
+	flags:         SymbolFlags,
 }
 
 SymbolType :: enum {
@@ -770,20 +770,16 @@ symbol_to_expr :: proc(symbol: Symbol, file: string, allocator := context.temp_a
 
 // TODO: these will need ranges of the fields as well
 construct_struct_field_symbol :: proc(symbol: ^Symbol, parent_name: string, value: SymbolStructValue, index: int) {
-	symbol.type_pkg = symbol.pkg
-	symbol.type_name = symbol.name
-	symbol.name = value.names[index]
-	symbol.pkg = parent_name
+	//symbol.variable_name = value.names[index]
+	//symbol.variable_pkg = parent_name
 	symbol.type = .Field
 	symbol.doc = get_doc(value.docs[index], context.temp_allocator)
 	symbol.comment = get_comment(value.comments[index])
 }
 
 construct_bit_field_field_symbol :: proc(symbol: ^Symbol, parent_name: string, value: SymbolBitFieldValue, index: int) {
-	symbol.type_pkg = symbol.pkg
-	symbol.type_name = symbol.name
-	symbol.name = value.names[index]
-	symbol.pkg = parent_name
+	//symbol.variable_name = value.names[index]
+	//symbol.variable_pkg = parent_name
 	symbol.type = .Field
 	symbol.doc = get_doc(value.docs[index], context.temp_allocator)
 	symbol.comment = get_comment(value.comments[index])
