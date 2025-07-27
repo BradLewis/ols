@@ -190,12 +190,12 @@ get_signature :: proc(ast_context: ^AstContext, symbol: ^Symbol) -> string {
 		return strings.to_string(sb)
 	case SymbolStructValue:
 		sb := strings.builder_make(ast_context.allocator)
-		if symbol.variable_name != "" {
-			if symbol.variable_pkg == "" {
-				fmt.sbprintf(&sb, "%s%s :: ", pointer_prefix, symbol.variable_name)
+		if symbol.name != "" {
+			if symbol.pkg == "" {
+				fmt.sbprintf(&sb, "%s%s :: ", pointer_prefix, symbol.name)
 			} else {
-				pkg_name := get_pkg_name(ast_context, symbol.variable_pkg)
-				fmt.sbprintf(&sb, "%s%s.%s :: ", pointer_prefix, pkg_name, symbol.variable_name)
+				pkg_name := get_pkg_name(ast_context, symbol.pkg)
+				fmt.sbprintf(&sb, "%s%s.%s :: ", pointer_prefix, pkg_name, symbol.name)
 			}
 		} else if is_variable {
 			append_variable_full_name(&sb, ast_context, symbol, pointer_prefix)
@@ -695,11 +695,10 @@ concatenate_raw_symbol_information :: proc(ast_context: ^AstContext, symbol: Sym
 
 	return concatenate_raw_string_information(
 		ast_context,
-		symbol.pkg,
-		symbol.name,
+		symbol.variable_pkg,
+		symbol.variable_name,
 		symbol.signature,
 		symbol.type,
-		symbol.comment,
 	)
 }
 
@@ -709,7 +708,6 @@ concatenate_raw_string_information :: proc(
 	name: string,
 	signature: string,
 	type: SymbolType,
-	comment: string,
 ) -> string {
 	pkg := path.base(pkg, false, context.temp_allocator)
 

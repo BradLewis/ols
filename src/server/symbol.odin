@@ -770,16 +770,16 @@ symbol_to_expr :: proc(symbol: Symbol, file: string, allocator := context.temp_a
 
 // TODO: these will need ranges of the fields as well
 construct_struct_field_symbol :: proc(symbol: ^Symbol, parent_name: string, value: SymbolStructValue, index: int) {
-	//symbol.variable_name = value.names[index]
-	//symbol.variable_pkg = parent_name
+	symbol.variable_name = value.names[index]
+	symbol.variable_pkg = parent_name
 	symbol.type = .Field
 	symbol.doc = get_doc(value.docs[index], context.temp_allocator)
 	symbol.comment = get_comment(value.comments[index])
 }
 
 construct_bit_field_field_symbol :: proc(symbol: ^Symbol, parent_name: string, value: SymbolBitFieldValue, index: int) {
-	//symbol.variable_name = value.names[index]
-	//symbol.variable_pkg = parent_name
+	symbol.variable_name = value.names[index]
+	symbol.variable_pkg = parent_name
 	symbol.type = .Field
 	symbol.doc = get_doc(value.docs[index], context.temp_allocator)
 	symbol.comment = get_comment(value.comments[index])

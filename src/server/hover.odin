@@ -413,12 +413,12 @@ get_hover_information :: proc(document: ^Document, position: common.Position) ->
 		}
 
 		if resolved, ok := resolve_type_identifier(&ast_context, ident); ok {
-			build_documentation(&ast_context, &resolved, false)
-			//resolved.variable_name = ident.name
-
+			resolved.variable_name = ident.name
 			if resolved.type == .Variable {
-				resolved.pkg = ast_context.document_package
+				resolved.variable_pkg = ast_context.document_package
 			}
+			build_documentation(&ast_context, &resolved, false)
+
 
 			hover.contents = write_hover_content(&ast_context, resolved)
 			return hover, true, true
