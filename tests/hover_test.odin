@@ -3584,10 +3584,35 @@ ast_hover_parapoly_proc_dynamic_array_elems :: proc(t: ^testing.T) {
 		}
 		`,
 	}
+	test.expect_hover( t, &source, "test.elem: ^$T")
+}
+
+@(test)
+ast_hover_union_with_tag :: proc(t: ^testing.T) {
+	source := test.Source {
+		main     = `package test
+		F{*}oo :: union #no_nil {
+			int, string,
+		}
+		`,
+	}
+
+	test.expect_hover(t, &source, "test.Foo: union #no_nil {\n\tint,\n\tstring,\n}")
+}
+
+@(test)
+ast_hover_union_with_align :: proc(t: ^testing.T) {
+	source := test.Source {
+		main     = `package test
+		F{*}oo :: union #no_nil #align(4) {
+			int, string,
+		}
+		`,
+	}
 	test.expect_hover(
 		t,
 		&source,
-		"test.elem: ^$T"
+		"test.Foo: union #no_nil #align(4) {\n\tint,\n\tstring,\n}"
 	)
 }
 /*
