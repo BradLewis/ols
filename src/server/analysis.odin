@@ -297,7 +297,7 @@ resolve_type_comp_literal :: proc(
 }
 
 // odinfmt: disable
-untyped_map: map[SymbolUntypedValueType][]string = {
+untyped_map: [SymbolUntypedValueType][]string = {
 	.Integer = {
 		"int", "uint", "u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64", "u128", "i128", "byte",
 		"i16le", "i16be", "i32le", "i32be", "i64le", "i64be", "i128le", "i128be",
@@ -882,18 +882,11 @@ resolve_basic_lit :: proc(ast_context: ^AstContext, basic_lit: ast.Basic_Lit) ->
 		value.type = .Integer
 	} else if v, ok := strconv.parse_bool(basic_lit.tok.text); ok {
 		value.type = .Bool
-	} else if v, ok := strconv.parse_int(basic_lit.tok.text[0:1]); ok {
+	} else if v, ok := strconv.parse_f64(basic_lit.tok.text); ok {
 		value.type = .Float
 	} else {
 		value.type = .String
 	}
-
-	/*
-	out commented because of an infinite loop in parse_f64
-	else if v, ok := strconv.parse_f64(basic_lit.tok.text); ok {
-		value.type = .Float
-	}
-	*/
 
 	symbol.pkg = ast_context.current_package
 	symbol.value = value
@@ -909,12 +902,34 @@ resolve_basic_directive :: proc(
 	Symbol,
 	bool,
 ) {
+	log.info("here?")
 	switch directive.name {
 	case "caller_location":
 		ident := new_type(ast.Ident, directive.pos, directive.end, ast_context.allocator)
 		ident.name = "Source_Code_Location"
 		set_ast_package_set_scoped(ast_context, ast_context.document_package)
 		return internal_resolve_type_identifier(ast_context, ident^)
+	case "config":
+		log.info("hio")
+		ident := new_type(ast.Ident, directive.pos, directive.end, ast_context.allocator)
+		ident.name = "config"
+		set_ast_package_set_scoped(ast_context, ast_context.document_package)
+		return internal_resolve_type_identifier(ast_context, ident^)
+	}
+
+	return {}, false
+}
+
+resolve_basic_directive2 :: proc(
+	ast_context: ^AstContext,
+	position_context: ^DocumentPositionContext,
+) -> (
+	Symbol,
+	bool,
+) {
+	switch position_context.basic_directive.name {
+	case "config":
+		return resolve_type_expression(ast_context, position_context.call)
 	}
 
 	return {}, false
@@ -928,9 +943,10 @@ get_proc_return_types :: proc(
 	call: ^ast.Call_Expr,
 	is_mutable: bool,
 ) -> []^ast.Expr {
+	log.info("and here?")
+	log.info(symbol)
 	return_types := make([dynamic]^ast.Expr, context.temp_allocator)
 	if ret, ok := check_builtin_proc_return_type(ast_context, symbol, call, is_mutable); ok {
-		appended := false
 		if call, ok := ret.derived.(^ast.Call_Expr); ok {
 			symbol := Symbol{}
 			if ok := internal_resolve_type_expression(ast_context, call.expr, &symbol); ok {
@@ -939,14 +955,18 @@ get_proc_return_types :: proc(
 		}
 		append(&return_types, ret)
 	} else if v, ok := symbol.value.(SymbolProcedureValue); ok {
-		for ret in v.return_types {
-			// Need min 1 loop for when return types aren't named, and to loop correctly when we have returns
-			// like -> (a, b, c: int)
-			for _ in 0 ..< max(1, len(ret.names)) {
-				if ret.type != nil {
-					append(&return_types, ret.type)
-				} else if ret.default_value != nil {
-					append(&return_types, ret.default_value)
+		if symbol.name == "config" {
+			append(&return_types, call.args[1])
+		} else {
+			for ret in v.return_types {
+				// Need min 1 loop for when return types aren't named, and to loop correctly when we have returns
+				// like -> (a, b, c: int)
+				for _ in 0 ..< max(1, len(ret.names)) {
+					if ret.type != nil {
+						append(&return_types, ret.type)
+					} else if ret.default_value != nil {
+						append(&return_types, ret.default_value)
+					}
 				}
 			}
 		}
@@ -1032,6 +1052,7 @@ internal_resolve_type_expression :: proc(ast_context: ^AstContext, node: ^ast.Ex
 	if check_node_recursion(ast_context, node) {
 		return false
 	}
+	log.info(node.derived)
 
 	using ast
 	ok := false

@@ -62,6 +62,13 @@ get_hover_information :: proc(document: ^Document, position: common.Position) ->
 		return {}, false, true
 	}
 
+	if position_context.basic_directive != nil && position_in_node(position_context.basic_directive, position_context.position) {
+		if symbol, ok := resolve_basic_directive(&ast_context, position_context.basic_directive^); ok {
+			hover.contents = write_hover_content(&ast_context, symbol)
+			return hover, true, true
+		}
+	}
+
 	if position_context.type_cast != nil &&
 	   !position_in_node(position_context.type_cast.type, position_context.position) &&
 	   !position_in_node(position_context.type_cast.expr, position_context.position) { 	// check that we're actually on the 'cast' word

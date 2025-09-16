@@ -4698,3 +4698,21 @@ ast_completion_struct_field_value :: proc(t: ^testing.T) {
 	}
 	test.expect_completion_docs(t, &source, "", {"test.Foo: struct {}"})
 }
+
+@(test)
+ast_completion_proc_alias_methods :: proc(t: ^testing.T) {
+	source := test.Source {
+		main = `package test
+		Thing :: struct {a, b: int}
+
+		thing_foo :: proc (t: ^Thing) {}
+		thing_bar :: thing_foo
+
+		proc :: main() {
+			thing: Thing
+			thing.{*}
+		}
+		`,
+	}
+	test.expect_completion_docs(t, &source, "", {"test.Foo: struct {}"})
+}

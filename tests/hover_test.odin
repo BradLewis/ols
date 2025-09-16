@@ -4738,6 +4738,17 @@ ast_hover_proc_group_parapoly_matrix :: proc(t: ^testing.T) {
 	}
 	test.expect_hover(t, &source, "test.c: matrix[3,2]int")
 }
+
+@(test)
+ast_hover_config_builtin_proc :: proc(t: ^testing.T) {
+	source := test.Source {
+		main     = `package test
+
+		F{*}OO :: #config("FOO_VAR", false)
+		`,
+	}
+	test.expect_hover(t, &source, "bit_field.c: u8 | 8")
+}
 /*
 
 Waiting for odin fix

@@ -59,6 +59,7 @@ DocumentPositionContext :: struct {
 	import_stmt:            ^ast.Import_Decl,
 	type_cast:              ^ast.Type_Cast,
 	call_commas:            []int,
+	basic_directive:        ^ast.Basic_Directive,
 }
 
 get_document_position_decls :: proc(decls: []^ast.Stmt, position_context: ^DocumentPositionContext) -> bool {
@@ -851,6 +852,8 @@ get_document_position_node :: proc(node: ^ast.Node, position_context: ^DocumentP
 		get_document_position(n.name, position_context)
 		get_document_position(n.type, position_context)
 		get_document_position(n.bit_size, position_context)
+	case ^Basic_Directive:
+		position_context.basic_directive = n
 	case:
 	}
 }

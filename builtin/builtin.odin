@@ -393,3 +393,6 @@ ODIN_WINDOWS_SUBSYSTEM_STRING: string
 */
 @builtin
 __ODIN_LLVM_F16_SUPPORTED: bool
+
+assert :: proc(cond: bool) ---
+config :: proc(ident: any, default: $T) -> $T ---

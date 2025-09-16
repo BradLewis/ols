@@ -51,6 +51,7 @@ lookup :: proc(name: string, pkg: string, current_file: string, loc := #caller_l
 	if name == "" {
 		return {}, false
 	}
+	log.info(name, pkg)
 
 	if symbol, ok := memory_index_lookup(&indexer.index, name, pkg); ok {
 		current_pkg := get_package_from_filepath(current_file)
