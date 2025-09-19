@@ -36,10 +36,12 @@ Method :: struct {
 }
 
 SymbolPackage :: struct {
-	symbols:      map[string]Symbol,
-	objc_structs: map[string]ObjcStruct, //mapping from struct name to function
-	methods:      map[Method][dynamic]Symbol,
-	imports:      [dynamic]string, //Used for references to figure whether the package is even able to reference the symbol
+	symbols:              map[string]Symbol,
+	private_symbols:      map[string]Symbol,
+	private_file_symbols: map[string]Symbol,
+	objc_structs:         map[string]ObjcStruct, //mapping from struct name to function
+	methods:              map[Method][dynamic]Symbol,
+	imports:              [dynamic]string, //Used for references to figure whether the package is even able to reference the symbol
 }
 
 get_index_unique_string :: proc {
@@ -756,6 +758,8 @@ collect_symbols :: proc(collection: ^SymbolCollection, file: ast.File, uri: stri
 			collection.packages[symbol.pkg] = {}
 			pkg = &collection.packages[symbol.pkg]
 			pkg.symbols = make(map[string]Symbol, 100, collection.allocator)
+			pkg.private_symbols = make(map[string]Symbol, 100, collection.allocator)
+			pkg.private_file_symbols = make(map[string]Symbol, 100, collection.allocator)
 			pkg.methods = make(map[Method][dynamic]Symbol, 100, collection.allocator)
 			pkg.objc_structs = make(map[string]ObjcStruct, 5, collection.allocator)
 		}
@@ -768,11 +772,22 @@ collect_symbols :: proc(collection: ^SymbolCollection, file: ast.File, uri: stri
 			collect_method(collection, symbol)
 		}
 
-		if v, ok := pkg.symbols[symbol.name]; !ok || v.name == "" {
-			pkg.symbols[symbol.name] = symbol
-		} else {
-			free_symbol(symbol, collection.allocator)
+		handle_symbol :: proc(symbols: ^map[string]Symbol, symbol: Symbol, collection: ^SymbolCollection) {
+			if v, ok := symbols[symbol.name]; !ok || v.name == "" {
+				symbols[symbol.name] = symbol
+			} else {
+				free_symbol(symbol, collection.allocator)
+			}
 		}
+
+		if .PrivatePackage in symbol.flags {
+			handle_symbol(&pkg.private_symbols, symbol, collection)
+		} else if .PrivateFile in symbol.flags {
+			handle_symbol(&pkg.private_file_symbols, symbol, collection)
+		} else {
+			handle_symbol(&pkg.symbols, symbol, collection)
+		}
+
 	}
 
 	collect_imports(collection, file, directory)

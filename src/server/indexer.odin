@@ -26,8 +26,8 @@ clear_index_cache :: proc() {
 	memory_index_clear_cache(&indexer.index)
 }
 
-should_skip_private_symbol :: proc(symbol: Symbol, current_pkg, current_file: string) -> bool {
-	if .PrivateFile not_in symbol.flags && .PrivatePackage not_in symbol.flags {
+should_skip_private_file_symbol :: proc(symbol: Symbol, current_pkg, current_file: string) -> bool {
+	if .PrivateFile not_in symbol.flags {
 		return false
 	}
 
@@ -37,11 +37,7 @@ should_skip_private_symbol :: proc(symbol: Symbol, current_pkg, current_file: st
 
 	symbol_file := strings.trim_prefix(symbol.uri, "file://")
 	current_file := strings.trim_prefix(current_file, "file://")
-	if .PrivateFile in symbol.flags && symbol_file != current_file {
-		return true
-	}
-
-	if .PrivatePackage in symbol.flags && current_pkg != symbol.pkg {
+	if symbol_file != current_file {
 		return true
 	}
 	return false
@@ -54,7 +50,7 @@ lookup :: proc(name: string, pkg: string, current_file: string, loc := #caller_l
 
 	if symbol, ok := memory_index_lookup(&indexer.index, name, pkg); ok {
 		current_pkg := get_package_from_filepath(current_file)
-		if should_skip_private_symbol(symbol, current_pkg, current_file) {
+		if should_skip_private_file_symbol(symbol, current_pkg, current_file) {
 			return {}, false
 		}
 		return symbol, true
