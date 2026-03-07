@@ -187,6 +187,7 @@ CheckProcess :: struct {
 
 check :: proc(mode: Check_Mode, check_paths: []string, config: ^common.Config) {
 	paths := resolve_check_paths(mode, check_paths, config)
+	log.error("running odin check on", paths)
 
 	if len(paths) == 0 {
 		return
@@ -353,7 +354,9 @@ check :: proc(mode: Check_Mode, check_paths: []string, config: ^common.Config) {
 
 	}
 
+	log.error("now have diagnostics", diagnostics)
 }
+
 @(private = "file")
 start_check_process :: proc(
 	check_path: string,
