@@ -18,6 +18,12 @@ import "core:time"
 
 import "src:common"
 
+Server :: struct {
+	writer: ^Writer,
+	config: ^common.Config,
+	index:  ^Indexer,
+}
+
 Header :: struct {
 	content_length: int,
 	content_type:   string,
@@ -214,7 +220,7 @@ read_and_parse_body :: proc(reader: ^Reader, header: Header) -> (json.Value, boo
 	return value, true
 }
 
-call_map: map[string]proc(_: json.Value, _: RequestId, _: ^common.Config, _: ^Writer) -> common.Error = {
+call_map: map[string]proc(_: json.Value, _: RequestId, _: ^Server) -> common.Error = {
 	"initialize"                        = request_initialize,
 	"initialized"                       = request_initialized,
 	"shutdown"                          = request_shutdown,
@@ -255,11 +261,17 @@ notification_map: map[string]struct{} = {
 	"workspace/didChangeWatchedFiles" = {},
 }
 
-consume_requests :: proc(config: ^common.Config, writer: ^Writer) -> bool {
+consume_requests :: proc(config: ^common.Config, writer: ^Writer, index: ^Indexer) -> bool {
 	temp_requests := make([dynamic]Request, 0, context.allocator)
 	defer delete(temp_requests)
 
 	sync.mutex_lock(&requests_mutex)
+
+	server := Server {
+		config = config,
+		writer = writer,
+		index  = index,
+	}
 
 	for d in deletings {
 		delete_index := -1
@@ -270,7 +282,7 @@ consume_requests :: proc(config: ^common.Config, writer: ^Writer) -> bool {
 			}
 		}
 		if delete_index != -1 {
-			cancel(requests[delete_index].value, requests[delete_index].id, writer, config)
+			cancel(requests[delete_index].value, requests[delete_index].id, &server)
 			ordered_remove(&requests, delete_index)
 		}
 	}
@@ -286,8 +298,8 @@ consume_requests :: proc(config: ^common.Config, writer: ^Writer) -> bool {
 
 	for ; request_index < len(temp_requests); request_index += 1 {
 		request := temp_requests[request_index]
-		call(request.value, request.id, writer, config)
-		clear_index_cache()
+		call(request.value, request.id, &server)
+		clear_index_cache(index)
 		free_all(context.temp_allocator)
 	}
 
@@ -311,15 +323,15 @@ consume_requests :: proc(config: ^common.Config, writer: ^Writer) -> bool {
 }
 
 
-cancel :: proc(value: json.Value, id: RequestId, writer: ^Writer, config: ^common.Config) {
+cancel :: proc(value: json.Value, id: RequestId, server: ^Server) {
 	response := make_response_message(id = id, params = ResponseParams{})
 
 	json.destroy_value(value)
 
-	send_response(response, writer)
+	send_response(response, server.writer)
 }
 
-call :: proc(value: json.Value, id: RequestId, writer: ^Writer, config: ^common.Config) {
+call :: proc(value: json.Value, id: RequestId, server: ^Server) {
 	root := value.(json.Object)
 
 	method, ok := root["method"].(json.String)
@@ -327,7 +339,7 @@ call :: proc(value: json.Value, id: RequestId, writer: ^Writer, config: ^common.
 	if !ok {
 		log.errorf("Failed to find method: %#v", root)
 		response := make_response_message_error(id = id, error = ResponseError{code = .MethodNotFound, message = ""})
-		send_error(response, writer)
+		send_error(response, server.writer)
 		return
 	}
 
@@ -340,12 +352,12 @@ call :: proc(value: json.Value, id: RequestId, writer: ^Writer, config: ^common.
 				id = id,
 				error = ResponseError{code = .MethodNotFound, message = ""},
 			)
-			send_error(response, writer)
+			send_error(response, server.writer)
 		} else {
-			err := fn(root["params"], id, config, writer)
+			err := fn(root["params"], id, server)
 			if err != .None {
 				response := make_response_message_error(id = id, error = ResponseError{code = err, message = ""})
-				send_error(response, writer)
+				send_error(response, server.writer)
 			}
 		}
 	}
@@ -626,12 +638,7 @@ read_ols_initialize_options :: proc(config: ^common.Config, ols_config: OlsConfi
 	log.info(config.collections)
 }
 
-request_initialize :: proc(
-	params: json.Value,
-	id: RequestId,
-	config: ^common.Config,
-	writer: ^Writer,
-) -> common.Error {
+request_initialize :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 	params_object, ok := params.(json.Object)
 
 	if !ok {
@@ -644,45 +651,45 @@ request_initialize :: proc(
 		return .ParseError
 	}
 
-	config.client_name = strings.clone(initialize_params.clientInfo.name)
-	config.workspace_folders = make([dynamic]common.WorkspaceFolder)
+	server.config.client_name = strings.clone(initialize_params.clientInfo.name)
+	server.config.workspace_folders = make([dynamic]common.WorkspaceFolder)
 
 	for s in initialize_params.workspaceFolders {
 		workspace: common.WorkspaceFolder
 		workspace.uri = strings.clone(s.uri)
-		append(&config.workspace_folders, workspace)
+		append(&server.config.workspace_folders, workspace)
 	}
 
-	config.enable_hover = true
-	config.enable_format = true
+	server.config.enable_hover = true
+	server.config.enable_format = true
 
-	config.enable_inlay_hints_params = false
-	config.enable_inlay_hints_default_params = false
-	config.enable_inlay_hints_implicit_return = false
+	server.config.enable_inlay_hints_params = false
+	server.config.enable_inlay_hints_default_params = false
+	server.config.enable_inlay_hints_implicit_return = false
 
-	config.disable_parser_errors = false
-	config.thread_count = 2
-	config.enable_document_symbols = true
-	config.enable_format = true
-	config.enable_hover = true
-	config.enable_semantic_tokens = false
-	config.enable_unused_imports_reporting = true
-	config.enable_procedure_context = false
-	config.enable_snippets = false
-	config.enable_references = true
-	config.enable_document_highlights = true
-	config.enable_completion_matching = true
-	config.enable_document_links = true
-	config.enable_comp_lit_signature_help = false
-	config.verbose = false
-	config.file_log = false
-	config.odin_command = ""
-	config.checker_args = ""
-	config.enable_fake_method = false
-	config.enable_procedure_snippet = true
-	config.enable_checker_only_saved = true
-	config.enable_checker_workspace_diagnostics = false
-	config.enable_auto_import = true
+	server.config.disable_parser_errors = false
+	server.config.thread_count = 2
+	server.config.enable_document_symbols = true
+	server.config.enable_format = true
+	server.config.enable_hover = true
+	server.config.enable_semantic_tokens = false
+	server.config.enable_unused_imports_reporting = true
+	server.config.enable_procedure_context = false
+	server.config.enable_snippets = false
+	server.config.enable_references = true
+	server.config.enable_document_highlights = true
+	server.config.enable_completion_matching = true
+	server.config.enable_document_links = true
+	server.config.enable_comp_lit_signature_help = false
+	server.config.verbose = false
+	server.config.file_log = false
+	server.config.odin_command = ""
+	server.config.checker_args = ""
+	server.config.enable_fake_method = false
+	server.config.enable_procedure_snippet = true
+	server.config.enable_checker_only_saved = true
+	server.config.enable_checker_workspace_diagnostics = false
+	server.config.enable_auto_import = true
 
 	read_ols_config :: proc(file: string, config: ^common.Config, uri: common.Uri) -> (ok: bool) {
 		data, err := os.read_entire_file(file, context.temp_allocator)
@@ -704,8 +711,8 @@ request_initialize :: proc(
 
 	project_uri := ""
 
-	if len(config.workspace_folders) > 0 {
-		project_uri = config.workspace_folders[0].uri
+	if len(server.config.workspace_folders) > 0 {
+		project_uri = server.config.workspace_folders[0].uri
 	} else if initialize_params.rootUri != "" {
 		project_uri = initialize_params.rootUri
 	}
@@ -718,40 +725,41 @@ request_initialize :: proc(
 
 	config_loaded: bool
 	if uri, ok := common.parse_uri(project_uri, context.temp_allocator); ok {
-		global_config_loaded := read_ols_config(global_ols_config_path, config, uri)
+		global_config_loaded := read_ols_config(global_ols_config_path, server.config, uri)
 
 		// Apply ols.json config.
 		ols_config_path := path.join(elems = {uri.path, "ols.json"}, allocator = context.temp_allocator)
-		local_config_loaded := read_ols_config(ols_config_path, config, uri)
+		local_config_loaded := read_ols_config(ols_config_path, server.config, uri)
 
 		config_loaded = local_config_loaded || global_config_loaded
 	} else {
-		config_loaded = read_ols_config(global_ols_config_path, config, {})
+		config_loaded = read_ols_config(global_ols_config_path, server.config, {})
 	}
 
 	// Config options should be initialized even if we failed to load the config, as this sets the default collections, ODIN_OS etc
 	if !config_loaded {
-		read_ols_initialize_options(config, initialize_params.initializationOptions, {})
+		read_ols_initialize_options(server.config, initialize_params.initializationOptions, {})
 	}
 
 	for format in initialize_params.capabilities.textDocument.hover.contentFormat {
 		if format == "markdown" {
-			config.hover_support_md = true
+			server.config.hover_support_md = true
 		}
 	}
 
 	for format in initialize_params.capabilities.textDocument.completion.documentationFormat {
 		if format == "markdown" {
-			config.completion_support_md = true
+			server.config.completion_support_md = true
 		}
 	}
 
-	config.enable_label_details =
+	server.config.enable_label_details =
 		initialize_params.capabilities.textDocument.completion.completionItem.labelDetailsSupport
 
-	config.enable_snippets &= initialize_params.capabilities.textDocument.completion.completionItem.snippetSupport
+	server.config.enable_snippets &=
+		initialize_params.capabilities.textDocument.completion.completionItem.snippetSupport
 
-	config.signature_offset_support =
+	server.config.signature_offset_support =
 		initialize_params.capabilities.textDocument.signatureHelp.signatureInformation.parameterInformation.labelOffsetSupport
 
 	completionTriggerCharacters := []string{".", ">", "#", "\"", "/", ":"}
@@ -766,8 +774,8 @@ request_initialize :: proc(
 				textDocumentSync = TextDocumentSyncOptions{openClose = true, change = 2, save = {includeText = true}},
 				renameProvider = RenameOptions{prepareProvider = true},
 				workspaceSymbolProvider = true,
-				referencesProvider = config.enable_references,
-				documentHighlightProvider = config.enable_document_highlights,
+				referencesProvider = server.config.enable_references,
+				documentHighlightProvider = server.config.enable_document_highlights,
 				definitionProvider = true,
 				typeDefinitionProvider = true,
 				completionProvider = CompletionOptions {
@@ -780,19 +788,19 @@ request_initialize :: proc(
 					retriggerCharacters = signatureRetriggerCharacters,
 				},
 				semanticTokensProvider = SemanticTokensOptions {
-					range = config.enable_semantic_tokens && semantic_range_support,
-					full = config.enable_semantic_tokens,
+					range = server.config.enable_semantic_tokens && semantic_range_support,
+					full = server.config.enable_semantic_tokens,
 					legend = SemanticTokensLegend {
 						tokenTypes = semantic_token_type_names,
 						tokenModifiers = semantic_token_modifier_names,
 					},
 				},
-				inlayHintProvider = (config.enable_inlay_hints_params ||
-					config.enable_inlay_hints_default_params ||
-					config.enable_inlay_hints_implicit_return),
-				documentSymbolProvider = config.enable_document_symbols,
-				hoverProvider = config.enable_hover,
-				documentFormattingProvider = config.enable_format,
+				inlayHintProvider = (server.config.enable_inlay_hints_params ||
+					server.config.enable_inlay_hints_default_params ||
+					server.config.enable_inlay_hints_implicit_return),
+				documentSymbolProvider = server.config.enable_document_symbols,
+				hoverProvider = server.config.enable_hover,
+				documentFormattingProvider = server.config.enable_format,
 				documentLinkProvider = {resolveProvider = false},
 				codeActionProvider = {resolveProvider = false, codeActionKinds = {"refactor.rewrite"}},
 			},
@@ -800,33 +808,33 @@ request_initialize :: proc(
 		id = id,
 	)
 
-	send_response(response, writer)
+	send_response(response, server.writer)
 
 	/*
 		Add runtime package
 	*/
 
-	if base, ok := config.collections["base"]; ok {
-		indexer.runtime_package = path.join({base, "runtime"})
-		append(&indexer.builtin_packages, indexer.runtime_package)
+	if base, ok := server.config.collections["base"]; ok {
+		server.index.runtime_package = path.join({base, "runtime"})
+		append(&server.index.builtin_packages, server.index.runtime_package)
 	}
 
 	file_resolve_cache.files = make(map[string]FileResolve, 200)
 
 	builtin_path := get_builtin_path(context.allocator)
-	config.builtin_path = builtin_path
+	server.config.builtin_path = builtin_path
 	// we still need to ensure the index is setup even if the builtin folder was not found
-	setup_index(builtin_path)
+	setup_index(server.index, builtin_path, server.config, context.allocator)
 
-	for pkg in indexer.builtin_packages {
-		try_build_package(pkg)
+	for pkg in server.index.builtin_packages {
+		try_build_package(server.index, pkg)
 	}
 
 	if initialize_params.capabilities.workspace.didChangeWatchedFiles.dynamicRegistration {
-		register_dynamic_capabilities(writer)
+		register_dynamic_capabilities(server.writer)
 	}
 
-	find_all_package_aliases()
+	find_all_package_aliases(server.index)
 
 	return .None
 }
@@ -885,32 +893,22 @@ register_dynamic_capabilities :: proc(writer: ^Writer) {
 	send_request(request_message, writer)
 }
 
-request_initialized :: proc(
-	params: json.Value,
-	id: RequestId,
-	config: ^common.Config,
-	writer: ^Writer,
-) -> common.Error {
-	if config.enable_checker_workspace_diagnostics {
-		queue_check_request(.Workspace, {}, config)
+request_initialized :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
+	if server.config.enable_checker_workspace_diagnostics {
+		queue_check_request(.Workspace, {}, server.config)
 	}
 	return .None
 }
 
-request_shutdown :: proc(params: json.Value, id: RequestId, config: ^common.Config, writer: ^Writer) -> common.Error {
+request_shutdown :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 	response := make_response_message(params = nil, id = id)
 
-	send_response(response, writer)
+	send_response(response, server.writer)
 
 	return .None
 }
 
-request_definition :: proc(
-	params: json.Value,
-	id: RequestId,
-	config: ^common.Config,
-	writer: ^Writer,
-) -> common.Error {
+request_definition :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 	params_object, ok := params.(json.Object)
 
 	if !ok {
@@ -929,7 +927,7 @@ request_definition :: proc(
 		return .InternalError
 	}
 
-	locations, ok2 := get_definition_location(document, definition_params.position, config)
+	locations, ok2 := get_definition_location(document, definition_params.position, server.config, server.index)
 
 	if !ok2 {
 		log.warn("Failed to get definition location")
@@ -937,21 +935,16 @@ request_definition :: proc(
 
 	if len(locations) == 1 {
 		response := make_response_message(params = locations[0], id = id)
-		send_response(response, writer)
+		send_response(response, server.writer)
 	} else {
 		response := make_response_message(params = locations, id = id)
-		send_response(response, writer)
+		send_response(response, server.writer)
 	}
 
 	return .None
 }
 
-request_type_definition :: proc(
-	params: json.Value,
-	id: RequestId,
-	config: ^common.Config,
-	writer: ^Writer,
-) -> common.Error {
+request_type_definition :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 	params_object, ok := params.(json.Object)
 
 	if !ok {
@@ -970,28 +963,23 @@ request_type_definition :: proc(
 		return .InternalError
 	}
 
-	locations, ok2 := get_type_definition_locations(document, definition_params.position)
+	locations, ok2 := get_type_definition_locations(document, definition_params.position, server.index)
 	if !ok2 {
 		log.warn("Failed to get type definition location")
 	}
 
 	if len(locations) == 1 {
 		response := make_response_message(params = locations[0], id = id)
-		send_response(response, writer)
+		send_response(response, server.writer)
 	} else {
 		response := make_response_message(params = locations, id = id)
-		send_response(response, writer)
+		send_response(response, server.writer)
 	}
 
 	return .None
 }
 
-request_completion :: proc(
-	params: json.Value,
-	id: RequestId,
-	config: ^common.Config,
-	writer: ^Writer,
-) -> common.Error {
+request_completion :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 	params_object, ok := params.(json.Object)
 
 	if !ok {
@@ -1012,7 +1000,13 @@ request_completion :: proc(
 	}
 
 	list: CompletionList
-	list, ok = get_completion_list(document, completition_params.position, completition_params.context_, config)
+	list, ok = get_completion_list(
+		document,
+		completition_params.position,
+		completition_params.context_,
+		server.config,
+		server.index,
+	)
 
 	if !ok {
 		return .InternalError
@@ -1020,17 +1014,12 @@ request_completion :: proc(
 
 	response := make_response_message(params = list, id = id)
 
-	send_response(response, writer)
+	send_response(response, server.writer)
 
 	return .None
 }
 
-request_signature_help :: proc(
-	params: json.Value,
-	id: RequestId,
-	config: ^common.Config,
-	writer: ^Writer,
-) -> common.Error {
+request_signature_help :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 	params_object, ok := params.(json.Object)
 
 	if !ok {
@@ -1050,7 +1039,7 @@ request_signature_help :: proc(
 	}
 
 	help: SignatureHelp
-	help, ok = get_signature_information(document, signature_params.position, config)
+	help, ok = get_signature_information(document, signature_params.position, server.config, server.index)
 
 	if !ok {
 		return .InternalError
@@ -1058,22 +1047,17 @@ request_signature_help :: proc(
 
 	if len(help.signatures) == 0 {
 		response := make_response_message(params = nil, id = id)
-		send_response(response, writer)
+		send_response(response, server.writer)
 	} else {
 		response := make_response_message(params = help, id = id)
-		send_response(response, writer)
+		send_response(response, server.writer)
 	}
 
 
 	return .None
 }
 
-request_format_document :: proc(
-	params: json.Value,
-	id: RequestId,
-	config: ^common.Config,
-	writer: ^Writer,
-) -> common.Error {
+request_format_document :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 	params_object, ok := params.(json.Object)
 
 	if !ok {
@@ -1093,7 +1077,7 @@ request_format_document :: proc(
 	}
 
 	edit: []TextEdit
-	edit, ok = get_complete_format(document, config)
+	edit, ok = get_complete_format(document, server.config)
 
 	if !ok {
 		return .InternalError
@@ -1101,22 +1085,17 @@ request_format_document :: proc(
 
 	response := make_response_message(params = edit, id = id)
 
-	send_response(response, writer)
+	send_response(response, server.writer)
 
 	return .None
 }
 
-notification_exit :: proc(params: json.Value, id: RequestId, config: ^common.Config, writer: ^Writer) -> common.Error {
-	config.running = false
+notification_exit :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
+	server.config.running = false
 	return .None
 }
 
-notification_did_open :: proc(
-	params: json.Value,
-	id: RequestId,
-	config: ^common.Config,
-	writer: ^Writer,
-) -> common.Error {
+notification_did_open :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 	params_object, ok := params.(json.Object)
 
 	if !ok {
@@ -1133,25 +1112,20 @@ notification_did_open :: proc(
 
 	defer delete(open_params.textDocument.uri)
 
-	if n := document_open(open_params.textDocument.uri, open_params.textDocument.text, config, writer); n != .None {
+	if n := document_open(open_params.textDocument.uri, open_params.textDocument.text, server); n != .None {
 		return .InternalError
 	}
 
 	document := document_get(open_params.textDocument.uri)
 
-	check_unused_imports(document, config)
+	check_unused_imports(document, server.config, server.index)
 
-	push_diagnostics(writer)
+	push_diagnostics(server.writer)
 
 	return .None
 }
 
-notification_did_change :: proc(
-	params: json.Value,
-	id: RequestId,
-	config: ^common.Config,
-	writer: ^Writer,
-) -> common.Error {
+notification_did_change :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 	params_object, ok := params.(json.Object)
 
 	if !ok {
@@ -1168,19 +1142,13 @@ notification_did_change :: proc(
 		change_params.textDocument.uri,
 		change_params.contentChanges,
 		change_params.textDocument.version,
-		config,
-		writer,
+		server,
 	)
 
 	return .None
 }
 
-notification_did_close :: proc(
-	params: json.Value,
-	id: RequestId,
-	config: ^common.Config,
-	writer: ^Writer,
-) -> common.Error {
+notification_did_close :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 	params_object, ok := params.(json.Object)
 
 	if !ok {
@@ -1200,12 +1168,7 @@ notification_did_close :: proc(
 	return .None
 }
 
-notification_did_save :: proc(
-	params: json.Value,
-	id: RequestId,
-	config: ^common.Config,
-	writer: ^Writer,
-) -> common.Error {
+notification_did_save :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 	params_object, ok := params.(json.Object)
 
 	if !ok {
@@ -1224,7 +1187,7 @@ notification_did_save :: proc(
 		return .ParseError
 	}
 
-	if result := index_file(uri, save_params.text); result != .None {
+	if result := index_file(server.index, uri, save_params.text); result != .None {
 		return result
 	}
 
@@ -1239,22 +1202,17 @@ notification_did_save :: proc(
 
 	document := document_get(save_params.textDocument.uri)
 	if document != nil {
-		check_unused_imports(document, config)
+		check_unused_imports(document, server.config, server.index)
 	}
 
-	push_diagnostics(writer)
+	push_diagnostics(server.writer)
 
-	queue_check_request(.Saved, corrected_uri.path, config)
+	queue_check_request(.Saved, corrected_uri.path, server.config)
 
 	return .None
 }
 
-request_semantic_token_full :: proc(
-	params: json.Value,
-	id: RequestId,
-	config: ^common.Config,
-	writer: ^Writer,
-) -> common.Error {
+request_semantic_token_full :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 	params_object, ok := params.(json.Object)
 
 	if !ok {
@@ -1280,28 +1238,23 @@ request_semantic_token_full :: proc(
 
 	tokens_params: SemanticTokensResponseParams
 
-	if config.enable_semantic_tokens {
-		resolve_entire_file_cached(document)
+	if server.config.enable_semantic_tokens {
+		resolve_entire_file_cached(document, server.index)
 
 		if file, ok := file_resolve_cache.files[document.uri.uri]; ok {
-			tokens := get_semantic_tokens(document, range, file.symbols)
+			tokens := get_semantic_tokens(document, range, server.index, file.symbols)
 			tokens_params = semantic_tokens_to_response_params(tokens)
 		}
 	}
 
 	response := make_response_message(params = tokens_params, id = id)
 
-	send_response(response, writer)
+	send_response(response, server.writer)
 
 	return .None
 }
 
-request_semantic_token_range :: proc(
-	params: json.Value,
-	id: RequestId,
-	config: ^common.Config,
-	writer: ^Writer,
-) -> common.Error {
+request_semantic_token_range :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 	params_object, ok := params.(json.Object)
 
 	if !ok {
@@ -1322,26 +1275,21 @@ request_semantic_token_range :: proc(
 
 	tokens_params: SemanticTokensResponseParams
 
-	if config.enable_semantic_tokens {
-		file := resolve_ranged_file_cached(document, semantic_params.range, context.temp_allocator)
+	if server.config.enable_semantic_tokens {
+		file := resolve_ranged_file_cached(document, server.index, semantic_params.range, context.temp_allocator)
 
-		tokens := get_semantic_tokens(document, semantic_params.range, file.symbols)
+		tokens := get_semantic_tokens(document, semantic_params.range, server.index, file.symbols)
 		tokens_params = semantic_tokens_to_response_params(tokens)
 	}
 
 	response := make_response_message(params = tokens_params, id = id)
 
-	send_response(response, writer)
+	send_response(response, server.writer)
 
 	return .None
 }
 
-request_document_symbols :: proc(
-	params: json.Value,
-	id: RequestId,
-	config: ^common.Config,
-	writer: ^Writer,
-) -> common.Error {
+request_document_symbols :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 	params_object, ok := params.(json.Object)
 
 	if !ok {
@@ -1360,16 +1308,16 @@ request_document_symbols :: proc(
 		return .InternalError
 	}
 
-	symbols := get_document_symbols(document)
+	symbols := get_document_symbols(document, server.index)
 
 	response := make_response_message(params = symbols, id = id)
 
-	send_response(response, writer)
+	send_response(response, server.writer)
 
 	return .None
 }
 
-request_hover :: proc(params: json.Value, id: RequestId, config: ^common.Config, writer: ^Writer) -> common.Error {
+request_hover :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 	params_object, ok := params.(json.Object)
 
 	if !ok {
@@ -1390,7 +1338,7 @@ request_hover :: proc(params: json.Value, id: RequestId, config: ^common.Config,
 
 	hover: Hover
 	valid: bool
-	hover, valid, ok = get_hover_information(document, hover_params.position)
+	hover, valid, ok = get_hover_information(document, hover_params.position, server.index)
 
 	if !ok {
 		return .InternalError
@@ -1398,21 +1346,16 @@ request_hover :: proc(params: json.Value, id: RequestId, config: ^common.Config,
 
 	if valid {
 		response := make_response_message(params = hover, id = id)
-		send_response(response, writer)
+		send_response(response, server.writer)
 	} else {
 		response := make_response_message(params = nil, id = id)
-		send_response(response, writer)
+		send_response(response, server.writer)
 	}
 
 	return .None
 }
 
-request_inlay_hint :: proc(
-	params: json.Value,
-	id: RequestId,
-	config: ^common.Config,
-	writer: ^Writer,
-) -> common.Error {
+request_inlay_hint :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 
 	_, is_params_object := params.(json.Object)
 	if !is_params_object do return .ParseError
@@ -1425,28 +1368,23 @@ request_inlay_hint :: proc(
 	document := document_get(inlay_params.textDocument.uri)
 	if document == nil do return .InternalError
 
-	file := resolve_ranged_file_cached(document, inlay_params.range, context.temp_allocator)
+	file := resolve_ranged_file_cached(document, server.index, inlay_params.range, context.temp_allocator)
 
-	hints, hints_ok := get_inlay_hints(document, inlay_params.range, file.symbols, config)
+	hints, hints_ok := get_inlay_hints(document, inlay_params.range, file.symbols, server.config)
 	if !hints_ok do return .InternalError
 
 	response := make_response_message(params = hints, id = id)
-	send_response(response, writer)
+	send_response(response, server.writer)
 
 	return .None
 }
 
-request_document_links :: proc(
-	params: json.Value,
-	id: RequestId,
-	config: ^common.Config,
-	writer: ^Writer,
-) -> common.Error {
-	if !config.enable_document_links {
+request_document_links :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
+	if !server.config.enable_document_links {
 		links: []DocumentLink
 		response := make_response_message(params = links, id = id)
 
-		send_response(response, writer)
+		send_response(response, server.writer)
 		return .None
 	}
 
@@ -1477,17 +1415,12 @@ request_document_links :: proc(
 
 	response := make_response_message(params = links, id = id)
 
-	send_response(response, writer)
+	send_response(response, server.writer)
 
 	return .None
 }
 
-request_prepare_rename :: proc(
-	params: json.Value,
-	id: RequestId,
-	config: ^common.Config,
-	writer: ^Writer,
-) -> common.Error {
+request_prepare_rename :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 	params_object, ok := params.(json.Object)
 
 	if !ok {
@@ -1506,18 +1439,18 @@ request_prepare_rename :: proc(
 		return .InternalError
 	}
 
-	if range, ok := get_prepare_rename(document, rename_param.position); ok {
+	if range, ok := get_prepare_rename(document, rename_param.position, server.index); ok {
 		response := make_response_message(params = range, id = id)
-		send_response(response, writer)
+		send_response(response, server.writer)
 	} else {
 		response := make_response_message(params = nil, id = id)
-		send_response(response, writer)
+		send_response(response, server.writer)
 	}
 
 	return .None
 }
 
-request_rename :: proc(params: json.Value, id: RequestId, config: ^common.Config, writer: ^Writer) -> common.Error {
+request_rename :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 	params_object, ok := params.(json.Object)
 
 	if !ok {
@@ -1537,7 +1470,7 @@ request_rename :: proc(params: json.Value, id: RequestId, config: ^common.Config
 	}
 
 	workspace_edit: WorkspaceEdit
-	workspace_edit, ok = get_rename(document, rename_param.newName, rename_param.position)
+	workspace_edit, ok = get_rename(document, rename_param.newName, rename_param.position, server.index)
 
 	if !ok {
 		return .InternalError
@@ -1545,17 +1478,12 @@ request_rename :: proc(params: json.Value, id: RequestId, config: ^common.Config
 
 	response := make_response_message(params = workspace_edit, id = id)
 
-	send_response(response, writer)
+	send_response(response, server.writer)
 
 	return .None
 }
 
-request_references :: proc(
-	params: json.Value,
-	id: RequestId,
-	config: ^common.Config,
-	writer: ^Writer,
-) -> common.Error {
+request_references :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 	params_object, ok := params.(json.Object)
 
 	if !ok {
@@ -1584,6 +1512,7 @@ request_references :: proc(
 	locations, ok = get_references(
 		document,
 		reference_param.position,
+		server.index,
 		include_declaration = reference_param.ctx.includeDeclaration,
 	)
 
@@ -1593,17 +1522,12 @@ request_references :: proc(
 
 	response := make_response_message(params = locations, id = id)
 
-	send_response(response, writer)
+	send_response(response, server.writer)
 
 	return .None
 }
 
-request_highlights :: proc(
-	params: json.Value,
-	id: RequestId,
-	config: ^common.Config,
-	writer: ^Writer,
-) -> common.Error {
+request_highlights :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 	params_object, ok := params.(json.Object)
 
 	if !ok {
@@ -1623,7 +1547,7 @@ request_highlights :: proc(
 	}
 
 	locations: []common.Location
-	locations, ok = get_references(document, highlight_param.position, true)
+	locations, ok = get_references(document, highlight_param.position, server.index, true)
 
 	if !ok {
 		return .InternalError
@@ -1636,17 +1560,12 @@ request_highlights :: proc(
 
 	response := make_response_message(params = highlights[:], id = id)
 
-	send_response(response, writer)
+	send_response(response, server.writer)
 
 	return .None
 }
 
-request_code_action :: proc(
-	params: json.Value,
-	id: RequestId,
-	config: ^common.Config,
-	writer: ^Writer,
-) -> common.Error {
+request_code_action :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 	params_object, ok := params.(json.Object)
 
 	if !ok {
@@ -1666,23 +1585,18 @@ request_code_action :: proc(
 	}
 
 	code_actions: []CodeAction
-	code_actions, ok = get_code_actions(document, code_action_params.range, config)
+	code_actions, ok = get_code_actions(document, code_action_params.range, server.config, server.index)
 	if !ok {
 		return .InternalError
 	}
 	response := make_response_message(params = code_actions, id = id)
 
-	send_response(response, writer)
+	send_response(response, server.writer)
 
 	return .None
 }
 
-notification_did_change_watched_files :: proc(
-	params: json.Value,
-	id: RequestId,
-	config: ^common.Config,
-	writer: ^Writer,
-) -> common.Error {
+notification_did_change_watched_files :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 	params_object, ok := params.(json.Object)
 
 	if !ok {
@@ -1698,25 +1612,25 @@ notification_did_change_watched_files :: proc(
 	for change in did_change_watched_files_params.changes {
 		if change.type == cast(int)FileChangeType.Deleted {
 			if uri, ok := common.parse_uri(change.uri, context.temp_allocator); ok {
-				remove_index_file(uri)
+				remove_index_file(server.index, uri)
 			}
-			clear_all_package_aliases()
-			find_all_package_aliases()
+			clear_all_package_aliases(server.index)
+			find_all_package_aliases(server.index)
 		} else {
 			if uri, ok := common.parse_uri(change.uri, context.temp_allocator); ok {
 				if data, err := os.read_entire_file(uri.path, context.temp_allocator); err == nil {
-					index_file(uri, cast(string)data)
+					index_file(server.index, uri, cast(string)data)
 				}
 			}
 			if change.type == cast(int)FileChangeType.Created {
-				clear_all_package_aliases()
-				find_all_package_aliases()
+				clear_all_package_aliases(server.index)
+				find_all_package_aliases(server.index)
 			}
 		}
 	}
 
-	if config.enable_checker_workspace_diagnostics {
-		queue_check_request(.Workspace, {}, config)
+	if server.config.enable_checker_workspace_diagnostics {
+		queue_check_request(.Workspace, {}, server.config)
 	}
 
 	return .None
@@ -1725,8 +1639,7 @@ notification_did_change_watched_files :: proc(
 notification_workspace_did_change_configuration :: proc(
 	params: json.Value,
 	id: RequestId,
-	config: ^common.Config,
-	writer: ^Writer,
+	server: ^Server,
 ) -> common.Error {
 	params_object, ok := params.(json.Object)
 
@@ -1742,22 +1655,17 @@ notification_workspace_did_change_configuration :: proc(
 
 	ols_config := workspace_config_params.settings
 
-	if uri, ok := common.parse_uri(config.workspace_folders[0].uri, context.temp_allocator); ok {
-		read_ols_initialize_options(config, ols_config, uri)
+	if uri, ok := common.parse_uri(server.config.workspace_folders[0].uri, context.temp_allocator); ok {
+		read_ols_initialize_options(server.config, ols_config, uri)
 	}
-	if config.enable_checker_workspace_diagnostics {
-		queue_check_request(.Workspace, {}, config)
+	if server.config.enable_checker_workspace_diagnostics {
+		queue_check_request(.Workspace, {}, server.config)
 	}
 
 	return .None
 }
 
-request_workspace_symbols :: proc(
-	params: json.Value,
-	id: RequestId,
-	config: ^common.Config,
-	writer: ^Writer,
-) -> common.Error {
+request_workspace_symbols :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 	params_object, ok := params.(json.Object)
 
 	if !ok {
@@ -1771,7 +1679,7 @@ request_workspace_symbols :: proc(
 	}
 
 	symbols: []WorkspaceSymbol
-	symbols, ok = get_workspace_symbols(workspace_symbol_params.query)
+	symbols, ok = get_workspace_symbols(server.index, workspace_symbol_params.query)
 
 	if !ok {
 		return .InternalError
@@ -1779,11 +1687,11 @@ request_workspace_symbols :: proc(
 
 	response := make_response_message(params = symbols, id = id)
 
-	send_response(response, writer)
+	send_response(response, server.writer)
 
 	return .None
 }
 
-request_noop :: proc(params: json.Value, id: RequestId, config: ^common.Config, writer: ^Writer) -> common.Error {
+request_noop :: proc(params: json.Value, id: RequestId, server: ^Server) -> common.Error {
 	return .None
 }

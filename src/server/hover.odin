@@ -14,7 +14,7 @@ write_hover_content :: proc(ast_context: ^AstContext, symbol: Symbol) -> MarkupC
 	return build_markup_content(cat, doc)
 }
 
-get_hover_information :: proc(document: ^Document, position: common.Position) -> (Hover, bool, bool) {
+get_hover_information :: proc(document: ^Document, position: common.Position, index: ^Indexer) -> (Hover, bool, bool) {
 	hover := Hover {
 		contents = {kind = "plaintext"},
 	}
@@ -25,6 +25,7 @@ get_hover_information :: proc(document: ^Document, position: common.Position) ->
 		document.package_name,
 		document.uri.uri,
 		document.fullpath,
+		index,
 	)
 
 	position_context, ok := get_document_position_context(document, position, .Hover)
@@ -53,7 +54,7 @@ get_hover_information :: proc(document: ^Document, position: common.Position) ->
 				pkg   = imp.name,
 				value = SymbolPackageValue{},
 			}
-			try_build_package(symbol.pkg)
+			try_build_package(ast_context.index, symbol.pkg)
 			if symbol, ok = resolve_symbol_return(&ast_context, symbol); ok {
 				hover.range = common.get_token_range(document.ast.pkg_decl, ast_context.file.src)
 				hover.contents = write_hover_content(&ast_context, symbol)
@@ -71,7 +72,7 @@ get_hover_information :: proc(document: ^Document, position: common.Position) ->
 			pkg   = ast_context.document_package,
 			value = SymbolPackageValue{},
 		}
-		try_build_package(symbol.pkg)
+		try_build_package(ast_context.index,symbol.pkg)
 		if symbol, ok = resolve_symbol_return(&ast_context, symbol); ok {
 			hover.range = common.get_token_range(document.ast.pkg_decl, ast_context.file.src)
 			hover.contents = write_hover_content(&ast_context, symbol)
@@ -359,7 +360,7 @@ get_hover_information :: proc(document: ^Document, position: common.Position) ->
 
 					if resolved, ok := resolve_symbol_return(
 						&ast_context,
-						lookup(ident.name, selector.pkg, ast_context.fullpath),
+						lookup(ast_context.index,ident.name, selector.pkg, ast_context.fullpath),
 					); ok {
 						build_documentation(&ast_context, &resolved, false)
 						resolved.name = ident.name

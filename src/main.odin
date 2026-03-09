@@ -32,6 +32,7 @@ request_thread: ^thread.Thread
 logger: ^log.Logger
 
 
+
 run :: proc(reader: ^server.Reader, writer: ^server.Writer) {
 	common.config.collections = make(map[string]string)
 	common.config.running = true
@@ -65,6 +66,7 @@ run :: proc(reader: ^server.Reader, writer: ^server.Writer) {
 	context.logger = logger^
 	server.create_and_start_check_worker(writer)
 	defer server.stop_check_worker()
+	index: server.Indexer
 
 
 	for common.config.running {
@@ -77,7 +79,7 @@ run :: proc(reader: ^server.Reader, writer: ^server.Writer) {
 
 		context.logger = logger^
 
-		server.consume_requests(&common.config, writer)
+		server.consume_requests(&common.config, writer, &index)
 	}
 
 	for k, v in common.config.collections {
@@ -90,7 +92,7 @@ run :: proc(reader: ^server.Reader, writer: ^server.Writer) {
 
 	server.document_storage_shutdown()
 
-	server.free_index()
+	server.free_index(&index)
 
 	/*
     for key, value in tracking_allocator.allocation_map {

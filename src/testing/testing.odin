@@ -24,6 +24,7 @@ Source :: struct {
 	collections: map[string]string,
 	config:      common.Config,
 	position:    common.Position,
+	index:       ^server.Indexer,
 }
 
 @(private)
@@ -65,15 +66,22 @@ setup :: proc(src: ^Source) {
 
 		last = current
 	}
-
-	server.setup_index(server.get_builtin_path())
+	index := new(server.Indexer, context.temp_allocator)
+	server.setup_index(index, server.get_builtin_path(context.temp_allocator), &src.config, context.temp_allocator)
+	src.index = index
 
 	// Set the collection's config to the test's config to enable feature flags like enable_fake_method
-	server.indexer.index.collection.config = &src.config
+	index.index.collection.config = &src.config
 
 	server.document_setup(src.document)
 
-	server.document_refresh(src.document, &src.config, nil)
+	s := server.Server {
+		index  = index,
+		config = &src.config,
+		writer = nil,
+	}
+
+	server.document_refresh(src.document, &s)
 
 	for src_pkg in src.packages {
 		context.allocator = virtual.arena_allocator(src.document.allocator)
@@ -112,7 +120,7 @@ setup :: proc(src: ^Source) {
 			panic("Parser error in test package source")
 		}
 
-		if ret := server.collect_symbols(&server.indexer.index.collection, file, uri.uri); ret != .None {
+		if ret := server.collect_symbols(s.index, &s.index.index.collection, file, uri.uri); ret != .None {
 			return
 		}
 	}
@@ -120,16 +128,15 @@ setup :: proc(src: ^Source) {
 
 @(private)
 teardown :: proc(src: ^Source) {
-	server.free_index()
-	server.indexer.index = {}
 	virtual.arena_destroy(src.document.allocator)
+	server.free_index(src.index)
 }
 
 expect_signature_labels :: proc(t: ^testing.T, src: ^Source, expect_labels: []string) {
 	setup(src)
 	defer teardown(src)
 
-	help, ok := server.get_signature_information(src.document, src.position, &src.config)
+	help, ok := server.get_signature_information(src.document, src.position, &src.config, src.index)
 
 	if !ok {
 		log.error("Failed get_signature_information")
@@ -161,7 +168,7 @@ expect_signature_parameter_position :: proc(t: ^testing.T, src: ^Source, positio
 	setup(src)
 	defer teardown(src)
 
-	help, ok := server.get_signature_information(src.document, src.position, &src.config)
+	help, ok := server.get_signature_information(src.document, src.position, &src.config, src.index)
 
 	if help.activeParameter != position {
 		log.errorf("expected parameter position %v, but received %v", position, help.activeParameter)
@@ -182,7 +189,13 @@ expect_completion_labels :: proc(
 		triggerCharacter = trigger_character,
 	}
 
-	completion_list, ok := server.get_completion_list(src.document, src.position, completion_context, &src.config)
+	completion_list, ok := server.get_completion_list(
+		src.document,
+		src.position,
+		completion_context,
+		&src.config,
+		src.index,
+	)
 
 	if !ok {
 		log.error("Failed get_completion_list")
@@ -243,7 +256,7 @@ expect_completion_docs :: proc(
 		triggerCharacter = trigger_character,
 	}
 
-	completion_list, ok := server.get_completion_list(src.document, src.position, completion_context, &src.config)
+	completion_list, ok := server.get_completion_list(src.document, src.position, completion_context, &src.config, src.index)
 
 	if !ok {
 		log.error("Failed get_completion_list")
@@ -291,7 +304,7 @@ expect_completion_insert_text :: proc(
 		triggerCharacter = trigger_character,
 	}
 
-	completion_list, ok := server.get_completion_list(src.document, src.position, completion_context, &src.config)
+	completion_list, ok := server.get_completion_list(src.document, src.position, completion_context, &src.config, src.index)
 
 	if !ok {
 		log.error("Failed get_completion_list")
@@ -335,7 +348,13 @@ expect_completion_edit_text :: proc(
 		triggerCharacter = trigger_character,
 	}
 
-	completion_list, ok := server.get_completion_list(src.document, src.position, completion_context, &src.config)
+	completion_list, ok := server.get_completion_list(
+		src.document,
+		src.position,
+		completion_context,
+		&src.config,
+		src.index,
+	)
 
 	if !ok {
 		log.error("Failed get_completion_list")
@@ -369,7 +388,7 @@ expect_hover :: proc(t: ^testing.T, src: ^Source, expect_hover_string: string) {
 	setup(src)
 	defer teardown(src)
 
-	hover, valid, ok := server.get_hover_information(src.document, src.position)
+	hover, valid, ok := server.get_hover_information(src.document, src.position, src.index)
 
 	if !ok {
 		log.error(t, "Failed get_hover_information")
@@ -393,7 +412,7 @@ expect_definition_locations :: proc(t: ^testing.T, src: ^Source, expect_location
 	setup(src)
 	defer teardown(src)
 
-	locations, ok := server.get_definition_location(src.document, src.position, &src.config)
+	locations, ok := server.get_definition_location(src.document, src.position, &src.config, src.index)
 
 	if !ok {
 		log.error("Failed get_definition_location")
@@ -424,7 +443,7 @@ expect_type_definition_locations :: proc(t: ^testing.T, src: ^Source, expect_loc
 	setup(src)
 	defer teardown(src)
 
-	locations, ok := server.get_type_definition_locations(src.document, src.position)
+	locations, ok := server.get_type_definition_locations(src.document, src.position, src.index)
 
 	if !ok {
 		log.error("Failed get_definition_location")
@@ -469,7 +488,12 @@ expect_reference_locations :: proc(
 	setup(src)
 	defer teardown(src)
 
-	locations, ok := server.get_references(src.document, src.position, include_declaration = include_declaration)
+	locations, ok := server.get_references(
+		src.document,
+		src.position,
+		src.index,
+		include_declaration = include_declaration,
+	)
 
 	for expect_location in expect_locations {
 		match := false
@@ -504,7 +528,7 @@ expect_prepare_rename_range :: proc(t: ^testing.T, src: ^Source, expect_range: c
 	setup(src)
 	defer teardown(src)
 
-	range, ok := server.get_prepare_rename(src.document, src.position)
+	range, ok := server.get_prepare_rename(src.document, src.position, src.index)
 	if !ok {
 		log.error("Failed to find range")
 	}
@@ -528,7 +552,7 @@ expect_action :: proc(t: ^testing.T, src: ^Source, expect_action_names: []string
 		start = src.position,
 		end   = src.position,
 	}
-	actions, ok := server.get_code_actions(src.document, input_range, &src.config)
+	actions, ok := server.get_code_actions(src.document, input_range, &src.config, src.index)
 	if !ok {
 		log.error("Failed to find actions")
 	}
@@ -562,7 +586,7 @@ expect_action_with_edit :: proc(t: ^testing.T, src: ^Source, action_name: string
 		start = src.position,
 		end   = src.position,
 	}
-	actions, ok := server.get_code_actions(src.document, input_range, &src.config)
+	actions, ok := server.get_code_actions(src.document, input_range, &src.config, src.index)
 	if !ok {
 		log.error("Failed to find actions")
 		return
@@ -598,12 +622,12 @@ expect_semantic_tokens :: proc(t: ^testing.T, src: ^Source, expected: []server.S
 
 
 	resolve_flag: server.ResolveReferenceFlag
-	symbols_and_nodes := server.resolve_entire_file(src.document, resolve_flag, context.temp_allocator)
+	symbols_and_nodes := server.resolve_entire_file(src.document, src.index, resolve_flag, context.temp_allocator)
 
 	range := common.Range {
 		end = {line = 9000000},
 	} //should be enough
-	tokens := server.get_semantic_tokens(src.document, range, symbols_and_nodes)
+	tokens := server.get_semantic_tokens(src.document, range, src.index, symbols_and_nodes)
 
 	testing.expectf(
 		t,
@@ -685,7 +709,7 @@ expect_inlay_hints :: proc(t: ^testing.T, src: ^Source) {
 	setup(src)
 	defer teardown(src)
 
-	symbols_and_nodes := server.resolve_entire_file(src.document, allocator = context.temp_allocator)
+	symbols_and_nodes := server.resolve_entire_file(src.document,src.index, allocator = context.temp_allocator)
 
 	range := common.Range {
 		end = {line = 9000000},

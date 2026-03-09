@@ -35,13 +35,22 @@ CodeAction :: struct {
 	edit:        WorkspaceEdit,
 }
 
-get_code_actions :: proc(document: ^Document, range: common.Range, config: ^common.Config) -> ([]CodeAction, bool) {
+get_code_actions :: proc(
+	document: ^Document,
+	range: common.Range,
+	config: ^common.Config,
+	index: ^Indexer,
+) -> (
+	[]CodeAction,
+	bool,
+) {
 	ast_context := make_ast_context(
 		document.ast,
 		document.imports,
 		document.package_name,
 		document.uri.uri,
 		document.fullpath,
+		index,
 		context.temp_allocator,
 	)
 
@@ -78,6 +87,7 @@ get_code_actions :: proc(document: ^Document, range: common.Range, config: ^comm
 			document,
 			strings.clone(document.uri.uri, context.temp_allocator),
 			config,
+			ast_context.index,
 			&actions,
 		)
 	}
@@ -107,9 +117,10 @@ remove_unused_imports :: proc(
 	document: ^Document,
 	uri: string,
 	config: ^common.Config,
+	index: ^Indexer,
 	actions: ^[dynamic]CodeAction,
 ) {
-	unused_imports := find_unused_imports(document, context.temp_allocator)
+	unused_imports := find_unused_imports(document, index, context.temp_allocator)
 
 	if len(unused_imports) == 0 {
 		return
@@ -165,7 +176,7 @@ add_missing_imports :: proc(
 		if _, ok := resolve_type_identifier(ast_context, name^); ok {
 			return
 		}
-		for collection, pkgs in build_cache.pkg_aliases {
+		for collection, pkgs in ast_context.index.cache.pkg_aliases {
 			for pkg in pkgs {
 				fullpath := path.join({config.collections[collection], pkg})
 				found := false

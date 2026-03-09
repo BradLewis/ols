@@ -115,7 +115,7 @@ document_release :: proc(document: ^Document) {
 	Client opens a document with transferred text
 */
 
-document_open :: proc(uri_string: string, text: string, config: ^common.Config, writer: ^Writer) -> common.Error {
+document_open :: proc(uri_string: string, text: string, server: ^Server) -> common.Error {
 	uri, parsed_ok := common.parse_uri(uri_string, context.allocator)
 
 	if !parsed_ok {
@@ -137,7 +137,7 @@ document_open :: proc(uri_string: string, text: string, config: ^common.Config, 
 
 		document_setup(document)
 
-		if err := document_refresh(document, config, writer); err != .None {
+		if err := document_refresh(document, server); err != .None {
 			return err
 		}
 	} else {
@@ -151,7 +151,7 @@ document_open :: proc(uri_string: string, text: string, config: ^common.Config, 
 
 		document_setup(&document)
 
-		if err := document_refresh(&document, config, writer); err != .None {
+		if err := document_refresh(&document, server); err != .None {
 			return err
 		}
 
@@ -200,8 +200,7 @@ document_apply_changes :: proc(
 	uri_string: string,
 	changes: [dynamic]TextDocumentContentChangeEvent,
 	version: Maybe(int),
-	config: ^common.Config,
-	writer: ^Writer,
+	server: ^Server,
 ) -> common.Error {
 	uri, parsed_ok := common.parse_uri(uri_string, context.temp_allocator)
 
@@ -271,7 +270,7 @@ document_apply_changes :: proc(
 		}
 	}
 
-	return document_refresh(document, config, writer)
+	return document_refresh(document, server)
 }
 
 document_close :: proc(uri_string: string) -> common.Error {
@@ -309,8 +308,8 @@ document_close :: proc(uri_string: string) -> common.Error {
 	return .None
 }
 
-document_refresh :: proc(document: ^Document, config: ^common.Config, writer: ^Writer) -> common.Error {
-	errors, ok := parse_document(document, config)
+document_refresh :: proc(document: ^Document, server: ^Server) -> common.Error {
+	errors, ok := parse_document(server.index, document, server.config)
 
 	if !ok {
 		return .ParseError
@@ -329,9 +328,9 @@ document_refresh :: proc(document: ^Document, config: ^common.Config, writer: ^W
 	uri := common.create_uri(path, context.temp_allocator)
 
 	remove_diagnostics(.Syntax, uri.uri)
-	check_unused_imports(document, config)
+	check_unused_imports(document, server.config, server.index)
 
-	if writer != nil && !config.disable_parser_errors {
+	if server.writer != nil && !server.config.disable_parser_errors {
 		document.diagnosed_errors = true
 
 		for error, i in errors {
@@ -350,7 +349,7 @@ document_refresh :: proc(document: ^Document, config: ^common.Config, writer: ^W
 			)
 		}
 
-		push_diagnostics(writer)
+		push_diagnostics(server.writer)
 	}
 
 	return .None
@@ -369,7 +368,7 @@ parser_error_handler :: proc(pos: tokenizer.Pos, msg: string, args: ..any) {
 	append(&current_errors, error)
 }
 
-parse_document :: proc(document: ^Document, config: ^common.Config) -> ([]ParserError, bool) {
+parse_document :: proc(index: ^Indexer, document: ^Document, config: ^common.Config) -> ([]ParserError, bool) {
 	p := parser.Parser {
 		err   = parser_error_handler,
 		warn  = common.parser_warning_handler,
@@ -402,7 +401,7 @@ parse_document :: proc(document: ^Document, config: ^common.Config) -> ([]Parser
 
 	parser.parse_file(&p, &document.ast)
 
-	parse_imports(document, config)
+	parse_imports(index, document, config)
 
 	folder := filepath.dir(document.fullpath, context.temp_allocator)
 	if strings.equal_fold(folder, config.builtin_path) {
@@ -412,7 +411,7 @@ parse_document :: proc(document: ^Document, config: ^common.Config) -> ([]Parser
 	return current_errors[:], true
 }
 
-parse_imports :: proc(document: ^Document, config: ^common.Config) {
+parse_imports :: proc(index: ^Indexer, document: ^Document, config: ^common.Config) {
 	imports := make([dynamic]Package)
 
 	for imp, index in document.ast.imports {
@@ -479,10 +478,10 @@ parse_imports :: proc(document: ^Document, config: ^common.Config) {
 	}
 
 	for imp in imports {
-		try_build_package(imp.name)
+		try_build_package(index, imp.name)
 	}
 
-	try_build_package(document.package_name)
+	try_build_package(index, document.package_name)
 
 	document.imports = imports[:]
 }

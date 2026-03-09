@@ -3,19 +3,19 @@ package server
 import "base:runtime"
 
 import "core:log"
-import "core:mem"
 import "core:odin/ast"
 import "core:strings"
 
 import "src:common"
 
-get_rename :: proc(document: ^Document, new_text: string, position: common.Position) -> (WorkspaceEdit, bool) {
+get_rename :: proc(document: ^Document, new_text: string, position: common.Position, index: ^Indexer) -> (WorkspaceEdit, bool) {
 	ast_context := make_ast_context(
 		document.ast,
 		document.imports,
 		document.package_name,
 		document.uri.uri,
 		document.fullpath,
+		index,
 		context.temp_allocator,
 	)
 
@@ -64,13 +64,14 @@ get_rename :: proc(document: ^Document, new_text: string, position: common.Posit
 }
 
 
-get_prepare_rename :: proc(document: ^Document, position: common.Position) -> (common.Range, bool) {
+get_prepare_rename :: proc(document: ^Document, position: common.Position, index: ^Indexer) -> (common.Range, bool) {
 	ast_context := make_ast_context(
 		document.ast,
 		document.imports,
 		document.package_name,
 		document.uri.uri,
 		document.fullpath,
+		index,
 		context.temp_allocator,
 	)
 

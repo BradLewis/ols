@@ -5,7 +5,6 @@ import "src:common"
 import "core:mem/virtual"
 import "core:os"
 import "core:path/filepath"
-import "core:slice"
 import "core:strings"
 import "core:time"
 
@@ -23,13 +22,13 @@ FileResolveCache :: struct {
 @(thread_local)
 file_resolve_cache: FileResolveCache
 
-resolve_entire_file_cached :: proc(document: ^Document) -> FileResolve {
+resolve_entire_file_cached :: proc(document: ^Document, index: ^Indexer) -> FileResolve {
 
 	file, cached := file_resolve_cache.files[document.uri.uri]
 
 	if !cached {
 		file = {
-			symbols = resolve_entire_file(document, .None, virtual.arena_allocator(document.allocator)),
+			symbols = resolve_entire_file(document, index, .None, virtual.arena_allocator(document.allocator)),
 		}
 		file_resolve_cache.files[document.uri.uri] = file
 	}
@@ -37,13 +36,18 @@ resolve_entire_file_cached :: proc(document: ^Document) -> FileResolve {
 	return file
 }
 
-resolve_ranged_file_cached :: proc(document: ^Document, range: common.Range, allocator := context.allocator) -> FileResolve {
+resolve_ranged_file_cached :: proc(
+	document: ^Document,
+	index: ^Indexer,
+	range: common.Range,
+	allocator := context.allocator,
+) -> FileResolve {
 
 	file, cached := file_resolve_cache.files[document.uri.uri]
 
 	if !cached {
 		file = {
-			symbols = resolve_ranged_file(document, range, allocator),
+			symbols = resolve_ranged_file(document, range, index, allocator),
 		}
 	}
 
@@ -59,23 +63,19 @@ PackageCacheInfo :: struct {
 	timestamp: time.Time,
 }
 
-@(thread_local)
-build_cache: BuildCache
-
-
-clear_all_package_aliases :: proc() {
-	for collection_name, alias_array in build_cache.pkg_aliases {
+clear_all_package_aliases :: proc(index: ^Indexer) {
+	for collection_name, alias_array in index.cache.pkg_aliases {
 		for alias in alias_array {
 			delete(alias)
 		}
 		delete(alias_array)
 	}
 
-	clear(&build_cache.pkg_aliases)
+	clear(&index.cache.pkg_aliases)
 }
 
 //Go through all the collections to find all the possible packages that exists
-find_all_package_aliases :: proc() {
+find_all_package_aliases :: proc(index: ^Indexer) {
 	for k, v in common.config.collections {
 		pkgs := make([dynamic]string, context.temp_allocator)
 		append_packages(v, &pkgs, {}, context.temp_allocator)
@@ -83,11 +83,11 @@ find_all_package_aliases :: proc() {
 		for pkg in pkgs {
 			if pkg, err := filepath.rel(v, pkg, context.temp_allocator); err == .None {
 				forward_pkg, _ := filepath.replace_path_separators(pkg, '/', context.temp_allocator)
-				if k not_in build_cache.pkg_aliases {
-					build_cache.pkg_aliases[k] = make([dynamic]string)
+				if k not_in index.cache.pkg_aliases {
+					index.cache.pkg_aliases[k] = make([dynamic]string)
 				}
 
-				aliases := &build_cache.pkg_aliases[k]
+				aliases := &index.cache.pkg_aliases[k]
 
 				append(aliases, strings.clone(forward_pkg))
 			}

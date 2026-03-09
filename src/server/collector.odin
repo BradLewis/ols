@@ -711,10 +711,10 @@ write_doc_string :: proc(sb: ^strings.Builder, doc: string) {
 	}
 }
 
-collect_symbols :: proc(collection: ^SymbolCollection, file: ast.File, uri: string) -> common.Error {
+collect_symbols :: proc(index: ^Indexer, collection: ^SymbolCollection, file: ast.File, uri: string) -> common.Error {
 	forward, _ := filepath.replace_path_separators(file.fullpath, '/', context.temp_allocator)
 	directory := path.dir(forward, context.temp_allocator)
-	package_map := get_package_mapping(file, collection.config, directory)
+	package_map := get_package_mapping(index, file, collection.config, directory)
 	exprs := collect_globals(file)
 
 	file_pkg_name := get_symbol_package_name(collection, directory, uri)
@@ -1004,10 +1004,10 @@ Reference :: struct {
 /*
 	Gets the map from import alias to absolute package directory
 */
-get_package_mapping :: proc(file: ast.File, config: ^common.Config, directory: string) -> map[string]string {
+get_package_mapping :: proc(index: ^Indexer, file: ast.File, config: ^common.Config, directory: string) -> map[string]string {
 	package_map := make(map[string]string, 0, context.temp_allocator)
 
-	for imp, index in file.imports {
+	for imp in file.imports {
 		//collection specified
 		if len(imp.fullpath) < 2 {
 			continue
@@ -1051,7 +1051,7 @@ get_package_mapping :: proc(file: ast.File, config: ^common.Config, directory: s
 			// Check if the package already exists in the index and use that path
 			// This handles the case where packages are indexed separately (e.g., in tests)
 			test_path := path.join(elems = {"test", pkg_name}, allocator = context.temp_allocator)
-			if _, exists := indexer.index.collection.packages[test_path]; exists {
+			if _, exists := index.index.collection.packages[test_path]; exists {
 				full = test_path
 			}
 

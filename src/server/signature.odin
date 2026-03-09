@@ -67,6 +67,7 @@ get_signature_information :: proc(
 	document: ^Document,
 	position: common.Position,
 	config: ^common.Config,
+	index: ^Indexer,
 ) -> (
 	SignatureHelp,
 	bool,
@@ -79,6 +80,7 @@ get_signature_information :: proc(
 		document.package_name,
 		document.uri.uri,
 		document.fullpath,
+		index,
 	)
 
 	position_context, ok := get_document_position_context(document, position, .SignatureHelp)
@@ -131,7 +133,7 @@ get_signature_information :: proc(
 
 @(private = "file")
 get_signature :: proc(symbol: Symbol) -> string {
-	sb := strings.builder_make()
+	sb := strings.builder_make(context.temp_allocator)
 	write_symbol_name(&sb, symbol)
 	strings.write_string(&sb, " :: ")
 	strings.write_string(&sb, symbol.signature)

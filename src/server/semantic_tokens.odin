@@ -1,3 +1,4 @@
+#+feature using-stmt
 /*
 
 LSP Reference:
@@ -5,11 +6,9 @@ https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/spe
 
 */
 
-#+feature using-stmt
+
 package server
 
-import "core:fmt"
-import "core:log"
 import "core:odin/ast"
 import "core:odin/tokenizer"
 import "core:unicode/utf8"
@@ -130,6 +129,7 @@ semantic_tokens_to_response_params :: proc(tokens: []SemanticToken) -> SemanticT
 get_semantic_tokens :: proc(
 	document: ^Document,
 	range: common.Range,
+	index: ^Indexer,
 	symbols: map[uintptr]SymbolAndNode,
 ) -> []SemanticToken {
 	ast_context := make_ast_context(
@@ -138,6 +138,7 @@ get_semantic_tokens :: proc(
 		document.package_name,
 		document.uri.uri,
 		document.fullpath,
+		index,
 	)
 	ast_context.current_package = ast_context.document_package
 

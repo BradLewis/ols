@@ -1,10 +1,7 @@
 package server
 
-import "core:fmt"
 import "core:log"
-import "core:mem"
 import "core:odin/ast"
-import "core:strings"
 
 import "src:common"
 
@@ -23,7 +20,14 @@ append_symbol_to_locations :: proc(locations: ^[dynamic]common.Location, documen
 	append(locations, location)
 }
 
-get_type_definition_locations :: proc(document: ^Document, position: common.Position) -> ([]common.Location, bool) {
+get_type_definition_locations :: proc(
+	document: ^Document,
+	position: common.Position,
+	index: ^Indexer,
+) -> (
+	[]common.Location,
+	bool,
+) {
 	uri: string
 	locations := make([dynamic]common.Location, context.temp_allocator)
 
@@ -40,6 +44,7 @@ get_type_definition_locations :: proc(document: ^Document, position: common.Posi
 		document.package_name,
 		document.uri.uri,
 		document.fullpath,
+		index,
 	)
 
 	ast_context.position_hint = position_context.hint
@@ -62,7 +67,8 @@ get_type_definition_locations :: proc(document: ^Document, position: common.Posi
 		}
 	}
 
-	if position_context.field_value != nil && position_in_node(position_context.field_value.field, position_context.position) {
+	if position_context.field_value != nil &&
+	   position_in_node(position_context.field_value.field, position_context.position) {
 		if position_context.comp_lit != nil {
 			if comp_symbol, ok := resolve_comp_literal(&ast_context, &position_context); ok {
 				if field, ok := position_context.field_value.field.derived.(^ast.Ident); ok {

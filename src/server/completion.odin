@@ -39,6 +39,7 @@ get_completion_list :: proc(
 	position: common.Position,
 	completion_context: CompletionContext,
 	config: ^common.Config,
+	index: ^Indexer,
 ) -> (
 	CompletionList,
 	bool,
@@ -74,6 +75,7 @@ get_completion_list :: proc(
 		document.package_name,
 		document.uri.uri,
 		document.fullpath,
+		index,
 	)
 	ast_context.position_hint = position_context.hint
 
@@ -969,14 +971,14 @@ get_selector_completion :: proc(
 		packages := make([dynamic]string, context.temp_allocator)
 		if is_builtin_pkg(selector.pkg) {
 			append(&packages, "$builtin")
-			for built in indexer.builtin_packages {
+			for built in ast_context.index.builtin_packages {
 				append(&packages, built)
 			}
 		} else {
 			append(&packages, selector.pkg)
 		}
 
-		if searched, ok := fuzzy_search(field, packages[:], ast_context.fullpath); ok {
+		if searched, ok := fuzzy_search(ast_context.index, field, packages[:], ast_context.fullpath); ok {
 			for search in searched {
 				symbol := search.symbol
 
@@ -1635,7 +1637,7 @@ get_identifier_completion :: proc(
 	append(&pkgs, ast_context.document_package)
 	append(&pkgs, "$builtin")
 
-	if fuzzy_results, ok := fuzzy_search(lookup_name, pkgs[:], ast_context.fullpath); ok {
+	if fuzzy_results, ok := fuzzy_search(ast_context.index, lookup_name, pkgs[:], ast_context.fullpath); ok {
 		for r in fuzzy_results {
 			r := r
 			resolve_unresolved_symbol(ast_context, &r.symbol)
@@ -1744,7 +1746,7 @@ get_identifier_completion :: proc(
 			pkg   = pkg.name,
 			value = SymbolPackageValue{},
 		}
-		try_build_package(symbol.pkg)
+		try_build_package(ast_context.index, symbol.pkg)
 		if resolved, ok := resolve_symbol_return(ast_context, symbol); ok {
 			symbol = resolved
 		}
@@ -2030,7 +2032,7 @@ append_non_imported_packages :: proc(
 	}
 
 	i := len(items)
-	for collection, pkgs in build_cache.pkg_aliases {
+	for collection, pkgs in ast_context.index.cache.pkg_aliases {
 		for pkg in pkgs {
 			fullpath := path.join({config.collections[collection], pkg})
 			found := false

@@ -34,7 +34,7 @@ get_all_package_file_locations :: proc(
 	return true
 }
 
-get_definition_location :: proc(document: ^Document, position: common.Position, config: ^common.Config) -> ([]common.Location, bool) {
+get_definition_location :: proc(document: ^Document, position: common.Position, config: ^common.Config, index: ^Indexer) -> ([]common.Location, bool) {
 	locations := make([dynamic]common.Location, context.temp_allocator)
 
 	location: common.Location
@@ -55,6 +55,7 @@ get_definition_location :: proc(document: ^Document, position: common.Position, 
 		document.package_name,
 		document.uri.uri,
 		document.fullpath,
+		index,
 	)
 
 	ast_context.position_hint = position_context.hint
@@ -212,7 +213,7 @@ try_resolve_proc_group_overload :: proc(
 			if global, ok := ast_context.globals[resolved.name]; ok {
 				resolved.range = common.get_token_range(global.name_expr, ast_context.file.src)
 				resolved.uri = common.create_uri(global.name_expr.pos.file, ast_context.allocator).uri
-			} else if indexed_symbol, ok := lookup(resolved.name, resolved.pkg, ast_context.fullpath); ok {
+			} else if indexed_symbol, ok := lookup(ast_context.index, resolved.name, resolved.pkg, ast_context.fullpath); ok {
 				resolved.range = indexed_symbol.range
 				resolved.uri = indexed_symbol.uri
 			}
@@ -242,7 +243,7 @@ get_full_symbol_from_selector :: proc(
 
 	ident := selector.field.derived.(^ast.Ident) or_return
 
-	return lookup(ident.name, symbol.pkg, ast_context.fullpath);
+	return lookup(ast_context.index, ident.name, symbol.pkg, ast_context.fullpath);
 }
 
 get_full_symbol_from_identifier :: proc(
@@ -261,7 +262,7 @@ get_full_symbol_from_identifier :: proc(
 
 	pkg := symbol.pkg if symbol.pkg != "" else ast_context.document_package
 
-	if pkg_symbol, ok := lookup(ident.name, pkg, ast_context.fullpath); ok {
+	if pkg_symbol, ok := lookup(ast_context.index, ident.name, pkg, ast_context.fullpath); ok {
 		return pkg_symbol, true
 	}
 

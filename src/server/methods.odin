@@ -1,19 +1,8 @@
 package server
 
 import "core:fmt"
-import "core:log"
-import "core:mem"
 import "core:odin/ast"
-import "core:odin/parser"
-import "core:odin/tokenizer"
-import "core:os"
-import "core:path/filepath"
 import path "core:path/slashpath"
-import "core:slice"
-import "core:sort"
-import "core:strconv"
-import "core:strings"
-
 
 import "src:common"
 
@@ -118,7 +107,7 @@ collect_methods :: proc(
 	remove_edit: []TextEdit,
 	results: ^[dynamic]CompletionResult,
 ) {
-	for k, v in indexer.index.collection.packages {
+	for k, v in ast_context.index.index.collection.packages {
 		symbols, ok := &v.methods[method]
 		if !ok {
 			continue

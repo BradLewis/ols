@@ -29,6 +29,7 @@ reset_position_context :: proc(position_context: ^DocumentPositionContext) {
 resolve_ranged_file :: proc(
 	document: ^Document,
 	range: common.Range,
+	index: ^Indexer,
 	allocator := context.allocator,
 ) -> map[uintptr]SymbolAndNode {
 	ast_context := make_ast_context(
@@ -37,6 +38,7 @@ resolve_ranged_file :: proc(
 		document.package_name,
 		document.uri.uri,
 		document.fullpath,
+		index,
 		allocator,
 	)
 
@@ -64,6 +66,7 @@ resolve_ranged_file :: proc(
 
 resolve_entire_file :: proc(
 	document: ^Document,
+	index: ^Indexer,
 	flag := ResolveReferenceFlag.None,
 	allocator := context.allocator,
 ) -> map[uintptr]SymbolAndNode {
@@ -73,6 +76,7 @@ resolve_entire_file :: proc(
 		document.package_name,
 		document.uri.uri,
 		document.fullpath,
+		index,
 		allocator,
 	)
 

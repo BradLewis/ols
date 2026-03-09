@@ -1,23 +1,29 @@
 package server
 
-import "core:log"
 import "core:strings"
+import "src:common"
 
 Indexer :: struct {
 	builtin_packages: [dynamic]string,
 	runtime_package:  string,
 	index:            MemoryIndex,
+	cache:            BuildCache,
 }
-
-@(thread_local)
-indexer: Indexer
 
 FuzzyResult :: struct {
 	symbol: Symbol,
 	score:  f32,
 }
 
-clear_index_cache :: proc() {
+setup_index :: proc(index: ^Indexer, builtin_path: string, config: ^common.Config, allocator := context.allocator) {
+	index.cache.loaded_pkgs = make(map[string]PackageCacheInfo, 50, allocator)
+	symbol_collection := make_symbol_collection(allocator, config)
+	index.index = make_memory_index(symbol_collection)
+
+	try_build_package(index, builtin_path)
+}
+
+clear_index_cache :: proc(indexer: ^Indexer) {
 	memory_index_clear_cache(&indexer.index)
 }
 
@@ -46,13 +52,13 @@ is_builtin_pkg :: proc(pkg: string) -> bool {
 	return strings.equal_fold(pkg, "$builtin") || strings.has_suffix(pkg, "/builtin")
 }
 
-lookup_builtin_symbol :: proc(name: string, current_file: string) -> (Symbol, bool) {
-	if symbol, ok := lookup_symbol(name, "$builtin", current_file); ok {
+lookup_builtin_symbol :: proc(index: ^Indexer, name: string, current_file: string) -> (Symbol, bool) {
+	if symbol, ok := lookup_symbol(index, name, "$builtin", current_file); ok {
 		return symbol, true
 	}
 
-	for built in indexer.builtin_packages {
-		if symbol, ok := lookup_symbol(name, built, current_file); ok {
+	for built in index.builtin_packages {
+		if symbol, ok := lookup_symbol(index, name, built, current_file); ok {
 			return symbol, true
 		}
 	}
@@ -60,21 +66,30 @@ lookup_builtin_symbol :: proc(name: string, current_file: string) -> (Symbol, bo
 	return {}, false
 }
 
-lookup :: proc(name: string, pkg: string, current_file: string, loc := #caller_location) -> (Symbol, bool) {
+lookup :: proc(
+	index: ^Indexer,
+	name: string,
+	pkg: string,
+	current_file: string,
+	loc := #caller_location,
+) -> (
+	Symbol,
+	bool,
+) {
 	if name == "" {
 		return {}, false
 	}
 
 	if is_builtin_pkg(pkg) {
-		return lookup_builtin_symbol(name, current_file)
+		return lookup_builtin_symbol(index, name, current_file)
 	}
 
-	return lookup_symbol(name, pkg, current_file)
+	return lookup_symbol(index, name, pkg, current_file)
 }
 
 @(private = "file")
-lookup_symbol ::proc(name: string, pkg: string, current_file: string) -> (Symbol, bool) {
-	if symbol, ok := memory_index_lookup(&indexer.index, name, pkg); ok {
+lookup_symbol :: proc(index: ^Indexer, name: string, pkg: string, current_file: string) -> (Symbol, bool) {
+	if symbol, ok := memory_index_lookup(&index.index, name, pkg); ok {
 		current_pkg := get_package_from_filepath(current_file)
 		if should_skip_private_symbol(symbol, current_pkg, current_file) {
 			return {}, false
@@ -86,6 +101,7 @@ lookup_symbol ::proc(name: string, pkg: string, current_file: string) -> (Symbol
 }
 
 fuzzy_search :: proc(
+	index: ^Indexer,
 	name: string,
 	pkgs: []string,
 	current_file: string,
@@ -95,7 +111,7 @@ fuzzy_search :: proc(
 	[]FuzzyResult,
 	bool,
 ) {
-	results, ok := memory_index_fuzzy_search(&indexer.index, name, pkgs, current_file, resolve_fields, limit = limit)
+	results, ok := memory_index_fuzzy_search(&index.index, name, pkgs, current_file, resolve_fields, limit = limit)
 	if !ok {
 		return {}, false
 	}
