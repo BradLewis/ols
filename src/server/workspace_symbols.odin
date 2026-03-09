@@ -18,64 +18,74 @@ WorkspaceCache :: struct {
 @(thread_local, private = "file")
 cache: WorkspaceCache
 
+get_workspace_packages :: proc(config: ^common.Config, pkgs: ^[dynamic]string, allocator := context.temp_allocator) -> bool {
+	for workspace in config.workspace_folders {
+		uri := common.parse_uri(workspace.uri, context.temp_allocator) or_return
+
+		dirs := make([dynamic]string, context.temp_allocator)
+
+		w := os.walker_create(uri.path)
+		defer os.walker_destroy(&w)
+		for info in os.walker_walk(&w) {
+			if info.type == .Directory {
+				dir, _ := filepath.replace_path_separators(info.fullpath, '/', context.temp_allocator)
+				dir_name := filepath.base(dir)
+				found := false
+				for blacklist in dir_blacklist {
+					if blacklist == dir_name {
+						found = true
+						os.walker_skip_dir(&w)
+						break
+					}
+				}
+				if !found {
+					append(&dirs, dir)
+				}
+			}
+		}
+
+		_pkg: for pkg in dirs {
+			matches, err := filepath.glob(fmt.tprintf("%v/*.odin", pkg), context.temp_allocator)
+
+			if len(matches) == 0 {
+				continue
+			}
+
+			for exclude_path in common.config.profile.exclude_path {
+				exclude_forward, _ := filepath.replace_path_separators(exclude_path, '/', context.temp_allocator)
+
+				if exclude_forward[len(exclude_forward) - 2:] == "**" {
+					lower_pkg := strings.to_lower(pkg)
+					lower_exclude := strings.to_lower(exclude_forward[:len(exclude_forward) - 3])
+					if strings.contains(lower_pkg, lower_exclude) {
+						continue _pkg
+					}
+				} else {
+					lower_pkg := strings.to_lower(pkg)
+					lower_exclude := strings.to_lower(exclude_forward)
+					if lower_pkg == lower_exclude {
+						continue _pkg
+					}
+				}
+			}
+			append(pkgs, pkg)
+		}
+	}
+
+	return true
+}
+
 get_workspace_symbols :: proc(index: ^Indexer, query: string) -> (workspace_symbols: []WorkspaceSymbol, ok: bool) {
 	if time.since(cache.time) > 20 * time.Second {
 		for pkg in cache.pkgs {
 			delete(pkg)
 		}
 		clear(&cache.pkgs)
-		for workspace in common.config.workspace_folders {
-			uri := common.parse_uri(workspace.uri, context.temp_allocator) or_return
-			pkgs := make([dynamic]string, 0, context.temp_allocator)
-
-			w := os.walker_create(uri.path)
-			defer os.walker_destroy(&w)
-			for info in os.walker_walk(&w) {
-				if info.type == .Directory {
-					dir, _ := filepath.replace_path_separators(info.fullpath, '/', context.temp_allocator)
-					dir_name := filepath.base(dir)
-					found := false
-					for blacklist in dir_blacklist {
-						if blacklist == dir_name {
-							found = true
-							os.walker_skip_dir(&w)
-							break
-						}
-					}
-					if !found {
-						append(&pkgs, dir)
-					}
-				}
-			}
-
-			_pkg: for pkg in pkgs {
-				matches, err := filepath.glob(fmt.tprintf("%v/*.odin", pkg), context.temp_allocator)
-
-				if len(matches) == 0 {
-					continue
-				}
-
-				for exclude_path in common.config.profile.exclude_path {
-					exclude_forward, _ := filepath.replace_path_separators(exclude_path, '/', context.temp_allocator)
-
-					if exclude_forward[len(exclude_forward) - 2:] == "**" {
-						lower_pkg := strings.to_lower(pkg)
-						lower_exclude := strings.to_lower(exclude_forward[:len(exclude_forward) - 3])
-						if strings.contains(lower_pkg, lower_exclude) {
-							continue _pkg
-						}
-					} else {
-						lower_pkg := strings.to_lower(pkg)
-						lower_exclude := strings.to_lower(exclude_forward)
-						if lower_pkg == lower_exclude {
-							continue _pkg
-						}
-					}
-				}
-
-				try_build_package(index, pkg)
-				append(&cache.pkgs, strings.clone(pkg, context.allocator))
-			}
+		pkgs := make([dynamic]string, context.temp_allocator)
+		get_workspace_packages(&common.config, &pkgs, context.temp_allocator)
+		for pkg in pkgs {
+			try_build_package(index, pkg)
+			append(&cache.pkgs, strings.clone(pkg, context.allocator))
 		}
 		cache.time = time.now()
 	}

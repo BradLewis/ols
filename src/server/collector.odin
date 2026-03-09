@@ -747,6 +747,11 @@ collect_symbols :: proc(index: ^Indexer, collection: ^SymbolCollection, file: as
 			}
 		}
 
+		delete_key(&index.entrypoint_pkgs, file.fullpath)
+		if name == "main" {
+			index.entrypoint_pkgs[file.fullpath] = {}
+		}
+
 		// Compute pkg early so it's available inside the switch
 		symbol.pkg = get_symbol_package_name(collection, directory, uri, expr.builtin)
 

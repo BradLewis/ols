@@ -8,6 +8,7 @@ Indexer :: struct {
 	runtime_package:  string,
 	index:            MemoryIndex,
 	cache:            BuildCache,
+	entrypoint_pkgs:  map[string][dynamic]string,
 }
 
 FuzzyResult :: struct {
@@ -19,6 +20,7 @@ setup_index :: proc(index: ^Indexer, builtin_path: string, config: ^common.Confi
 	index.cache.loaded_pkgs = make(map[string]PackageCacheInfo, 50, allocator)
 	symbol_collection := make_symbol_collection(allocator, config)
 	index.index = make_memory_index(symbol_collection)
+	index.entrypoint_pkgs = make(map[string][dynamic]string, allocator)
 
 	try_build_package(index, builtin_path)
 }

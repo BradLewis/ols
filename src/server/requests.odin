@@ -830,6 +830,15 @@ request_initialize :: proc(params: json.Value, id: RequestId, server: ^Server) -
 		try_build_package(server.index, pkg)
 	}
 
+	pkgs := make([dynamic]string, context.temp_allocator)
+	if get_workspace_packages(server.config, &pkgs, allocator = context.temp_allocator) {
+		for pkg in pkgs {
+			try_build_package(server.index, pkg)
+		}
+	}
+
+	log.error(server.index.entrypoint_pkgs)
+
 	if initialize_params.capabilities.workspace.didChangeWatchedFiles.dynamicRegistration {
 		register_dynamic_capabilities(server.writer)
 	}
