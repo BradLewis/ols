@@ -3,13 +3,12 @@ package server
 import "core:strings"
 import "src:common"
 
-import "src:common"
-
 Indexer :: struct {
 	builtin_packages: [dynamic]string,
 	runtime_package:  string,
 	index:            MemoryIndex,
 	cache:            BuildCache,
+	entrypoint_pkgs:  map[string][dynamic]string,
 }
 
 FuzzyResult :: struct {
@@ -21,6 +20,7 @@ setup_index :: proc(index: ^Indexer, builtin_path: string, config: ^common.Confi
 	index.cache.loaded_pkgs = make(map[string]PackageCacheInfo, 50, allocator)
 	symbol_collection := make_symbol_collection(allocator, config)
 	index.index = make_memory_index(symbol_collection)
+	index.entrypoint_pkgs = make(map[string][dynamic]string, allocator)
 
 	try_build_package(index, builtin_path)
 }
@@ -58,7 +58,7 @@ lookup_builtin_symbol :: proc(index: ^Indexer, name: string, current_file_uri: s
 	}
 
 	for built in index.builtin_packages {
-		if symbol, ok := lookup_symbol(index, name, built, current_file); ok {
+		if symbol, ok := lookup_symbol(index, name, built, current_file_uri); ok {
 			return symbol, true
 		}
 	}
@@ -84,10 +84,10 @@ lookup :: proc(
 	current_file_uri := common.create_uri(current_file, context.temp_allocator).uri
 
 	if is_builtin_pkg(pkg) {
-		return lookup_builtin_symbol(index, name, current_file)
+		return lookup_builtin_symbol(index, name, current_file_uri)
 	}
 
-	return lookup_symbol(index, name, pkg, current_file)
+	return lookup_symbol(index, name, pkg, current_file_uri)
 }
 
 @(private = "file")

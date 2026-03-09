@@ -747,12 +747,12 @@ request_initialize :: proc(params: json.Value, id: RequestId, server: ^Server) -
 
 	uri, uri_ok := common.parse_uri(project_uri, context.temp_allocator)
 
-	global_config_loaded := read_ols_config(global_ols_config_path, config, uri)
-	read_ols_initialize_options(config, initialize_params.initializationOptions, uri)
+	global_config_loaded := read_ols_config(global_ols_config_path, server.config, uri)
+	read_ols_initialize_options(server.config, initialize_params.initializationOptions, uri)
 	if uri_ok {
 		// Apply ols.json config.
 		ols_config_path := path.join(elems = {uri.path, "ols.json"}, allocator = context.temp_allocator)
-		read_ols_config(ols_config_path, config, uri)
+		read_ols_config(ols_config_path, server.config, uri)
 	}
 
 	for format in initialize_params.capabilities.textDocument.hover.contentFormat {
@@ -843,6 +843,15 @@ request_initialize :: proc(params: json.Value, id: RequestId, server: ^Server) -
 	for pkg in server.index.builtin_packages {
 		try_build_package(server.index, pkg)
 	}
+
+	pkgs := make([dynamic]string, context.temp_allocator)
+	if get_workspace_packages(server.config, &pkgs, allocator = context.temp_allocator) {
+		for pkg in pkgs {
+			try_build_package(server.index, pkg)
+		}
+	}
+
+	log.error(server.index.entrypoint_pkgs)
 
 	if initialize_params.capabilities.workspace.didChangeWatchedFiles.dynamicRegistration {
 		register_dynamic_capabilities(server.writer)

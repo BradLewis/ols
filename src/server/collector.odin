@@ -1,5 +1,6 @@
 package server
 
+import "core:fmt"
 import "core:mem"
 import "core:odin/ast"
 import "core:path/filepath"
@@ -729,7 +730,7 @@ write_doc_string :: proc(sb: ^strings.Builder, doc: string) {
 }
 
 collect_symbols :: proc(index: ^Indexer, collection: ^SymbolCollection, file: ast.File, uri: string) -> common.Error {
-	forward, _ := filepath.replace_path_separators(file.fullpath, '/', context.temp_allocator)
+	forward, _ := filepath.replace_separators(file.fullpath, '/', context.temp_allocator)
 	directory := path.dir(forward, context.temp_allocator)
 	package_map := get_package_mapping(index, file, collection.config, directory)
 	exprs := collect_globals(file)
@@ -737,7 +738,7 @@ collect_symbols :: proc(index: ^Indexer, collection: ^SymbolCollection, file: as
 	file_pkg_name := get_symbol_package_name(collection, directory, uri)
 	file_pkg := get_or_create_package(collection, file_pkg_name)
 	doc, comment := get_package_decl_doc_comment(file, collection.allocator)
-	
+
 	u := strings.clone(uri, collection.allocator)
 	file_pkg.doc[u] = doc
 	file_pkg.comment[u] = comment
@@ -764,6 +765,11 @@ collect_symbols :: proc(index: ^Indexer, collection: ^SymbolCollection, file: as
 				col_expr = dist.type
 				is_distinct = true
 			}
+		}
+
+		delete_key(&index.entrypoint_pkgs, file.fullpath)
+		if name == "main" {
+			index.entrypoint_pkgs[file.fullpath] = {}
 		}
 
 		// Compute pkg early so it's available inside the switch
@@ -1027,7 +1033,12 @@ Reference :: struct {
 /*
 	Gets the map from import alias to absolute package directory
 */
-get_package_mapping :: proc(index: ^Indexer, file: ast.File, config: ^common.Config, directory: string) -> map[string]string {
+get_package_mapping :: proc(
+	index: ^Indexer,
+	file: ast.File,
+	config: ^common.Config,
+	directory: string,
+) -> map[string]string {
 	package_map := make(map[string]string, 0, context.temp_allocator)
 
 	for imp in file.imports {

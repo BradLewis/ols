@@ -3,7 +3,6 @@ package server
 import "src:common"
 
 import "core:mem/virtual"
-import "core:os"
 import "core:path/filepath"
 import "core:strings"
 import "core:time"
@@ -82,7 +81,7 @@ find_all_package_aliases :: proc(index: ^Indexer) {
 
 		for pkg in pkgs {
 			if pkg, err := filepath.rel(v, pkg, context.temp_allocator); err == .None {
-				forward_pkg, _ := filepath.replace_path_separators(pkg, '/', context.temp_allocator)
+				forward_pkg, _ := filepath.replace_separators(pkg, '/', context.temp_allocator)
 				if k not_in index.cache.pkg_aliases {
 					index.cache.pkg_aliases[k] = make([dynamic]string)
 				}

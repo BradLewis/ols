@@ -35,7 +35,7 @@ AstContext :: struct {
 	deferred_count:            int,
 	use_locals:                bool,
 	use_usings:                bool,
-	use_imports:              bool,
+	use_imports:               bool,
 	call:                      ^ast.Call_Expr, //used to determine the types for generics and the correct function for overloaded functions
 	value_decl:                ^ast.Value_Decl,
 	field_name:                ast.Ident,
@@ -2112,10 +2112,14 @@ internal_resolve_type_identifier :: proc(ast_context: ^AstContext, node: ast.Ide
 			if imp.name == ast_context.current_package {
 				continue
 			}
+			if strings.compare(imp.base, node.name) == 0 {
+				symbol := Symbol {
+					type  = .Package,
+					pkg   = imp.name,
+					value = SymbolPackageValue{},
+				}
 
-			try_build_package(ast_context.index, symbol.pkg)
-
-				try_build_package(symbol.pkg)
+				try_build_package(ast_context.index, symbol.pkg)
 
 				return resolve_symbol_return(ast_context, symbol)
 			}
