@@ -128,6 +128,7 @@ setup :: proc(src: ^Source) {
 
 @(private)
 teardown :: proc(src: ^Source) {
+	delete(src.document.package_name)
 	virtual.arena_destroy(src.document.allocator)
 	server.free_index(src.index)
 }
