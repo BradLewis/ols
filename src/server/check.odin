@@ -121,12 +121,12 @@ fallback_find_odin_directories :: proc(config: ^common.Config) -> []string {
 	return data[:]
 }
 
-check_unused_imports :: proc(document: ^Document, config: ^common.Config) {
+check_unused_imports :: proc(document: ^Document, config: ^common.Config, index: ^Indexer) {
 	if !config.enable_unused_imports_reporting {
 		return
 	}
 
-	unused_imports := find_unused_imports(document, context.temp_allocator)
+	unused_imports := find_unused_imports(document, index, context.temp_allocator)
 
 	path := document.uri.path
 

@@ -4,13 +4,14 @@ import "core:odin/ast"
 
 import "src:common"
 
-get_document_symbols :: proc(document: ^Document) -> []DocumentSymbol {
+get_document_symbols :: proc(document: ^Document, index: ^Indexer) -> []DocumentSymbol {
 	ast_context := make_ast_context(
 		document.ast,
 		document.imports,
 		document.package_name,
 		document.uri.uri,
 		document.fullpath,
+		index,
 	)
 
 	get_globals(document.ast, &ast_context)

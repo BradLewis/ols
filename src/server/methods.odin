@@ -1,8 +1,7 @@
 package server
 
-import "core:log"
-import "core:fmt"
 import "core:mem"
+import "core:fmt"
 import "core:odin/ast"
 import path "core:path/slashpath"
 
@@ -109,7 +108,7 @@ collect_methods :: proc(
 	remove_edit: []TextEdit,
 	results: ^[dynamic]CompletionResult,
 ) {
-	for k, v in indexer.index.collection.packages {
+	for k, v in ast_context.index.index.collection.packages {
 		symbols, ok := &v.methods[method]
 		if !ok {
 			continue

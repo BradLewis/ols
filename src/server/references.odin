@@ -8,7 +8,6 @@ import "core:odin/ast"
 import "core:odin/parser"
 import "core:os"
 import "core:path/filepath"
-import path "core:path/slashpath"
 import "core:slice"
 import "core:strings"
 
@@ -249,7 +248,7 @@ resolve_references :: proc(
 	}
 
 	target_name := get_target_name(position_context, resolve_flag)
-	symbols_and_nodes := resolve_entire_file(document, resolve_flag, ast_context.allocator, target_name)
+	symbols_and_nodes := resolve_entire_file(document, ast_context.index, resolve_flag, ast_context.allocator, target_name)
 
 	for k, v in symbols_and_nodes {
 		if strings.equal_fold(v.symbol.uri, symbol.uri) && v.symbol.range == symbol.range {
@@ -382,7 +381,7 @@ resolve_references :: proc(
 
 		document_setup(&document)
 
-		parse_imports(&document, &common.config)
+		parse_imports(ast_context.index, &document, &common.config)
 
 		in_pkg := false
 
@@ -394,7 +393,7 @@ resolve_references :: proc(
 		}
 
 		if in_pkg || symbol.pkg == document.package_name {
-			symbols_and_nodes := resolve_entire_file(&document, resolve_flag, context.allocator, target_name)
+			symbols_and_nodes := resolve_entire_file(&document, ast_context.index, resolve_flag, context.allocator, target_name)
 			for k, v in symbols_and_nodes {
 				if strings.equal_fold(v.symbol.uri, symbol.uri) && v.symbol.range == symbol.range {
 					node_uri := common.create_uri(v.node.pos.file, ast_context.allocator)
@@ -426,6 +425,7 @@ resolve_references :: proc(
 get_references :: proc(
 	document: ^Document,
 	position: common.Position,
+	index: ^Indexer,
 	current_file_only := false,
 	include_declaration := true,
 ) -> (
@@ -438,6 +438,7 @@ get_references :: proc(
 		document.package_name,
 		document.uri.uri,
 		document.fullpath,
+		index,
 		context.temp_allocator,
 	)
 

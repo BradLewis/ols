@@ -120,7 +120,12 @@ skip_file :: proc(filename: string) -> bool {
 
 // Finds all packages under the provided path by walking the file system
 // and appends them to the provided dynamic array
-append_packages :: proc(path: string, pkgs: ^[dynamic]string, skip: map[string]struct{}, allocator := context.temp_allocator) {
+append_packages :: proc(
+	path: string,
+	pkgs: ^[dynamic]string,
+	skip: map[string]struct{},
+	allocator := context.temp_allocator,
+) {
 	w := os.walker_create(path)
 	defer os.walker_destroy(&w)
 	for info in os.walker_walk(&w) {
@@ -169,8 +174,8 @@ should_collect_file :: proc(file_tags: parser.File_Tags) -> bool {
 	return true
 }
 
-try_build_package :: proc(pkg_name: string) {
-	if pkg, ok := build_cache.loaded_pkgs[pkg_name]; ok {
+try_build_package :: proc(index: ^Indexer, pkg_name: string) {
+	if pkg, ok := index.cache.loaded_pkgs[pkg_name]; ok {
 		return
 	}
 
@@ -236,19 +241,19 @@ try_build_package :: proc(pkg_name: string) {
 
 			uri := common.create_uri(fullpath, context.allocator)
 
-			collect_symbols(&indexer.index.collection, file, uri.uri)
+			collect_symbols(index, &index.index.collection, file, uri.uri)
 
 			runtime.arena_free_all(&arena)
 		}
 	}
 
-	build_cache.loaded_pkgs[strings.clone(pkg_name, indexer.index.collection.allocator)] = PackageCacheInfo {
+	index.cache.loaded_pkgs[strings.clone(pkg_name, index.index.collection.allocator)] = PackageCacheInfo {
 		timestamp = time.now(),
 	}
 }
 
 
-remove_index_file :: proc(uri: common.Uri) -> common.Error {
+remove_index_file :: proc(index: ^Indexer, uri: common.Uri) -> common.Error {
 	ok: bool
 
 	fullpath := uri.path
@@ -259,10 +264,10 @@ remove_index_file :: proc(uri: common.Uri) -> common.Error {
 
 	corrected_uri := common.create_uri(fullpath, context.temp_allocator)
 
-	for k, &v in indexer.index.collection.packages {
+	for k, &v in index.index.collection.packages {
 		for k2, v2 in v.symbols {
 			if strings.equal_fold(corrected_uri.uri, v2.uri) {
-				free_symbol(v2, indexer.index.collection.allocator)
+				free_symbol(v2, index.index.collection.allocator)
 				delete_key(&v.symbols, k2)
 			}
 		}
@@ -282,7 +287,7 @@ remove_index_file :: proc(uri: common.Uri) -> common.Error {
 	return .None
 }
 
-index_file :: proc(uri: common.Uri, text: string) -> common.Error {
+index_file :: proc(index: ^Indexer, uri: common.Uri, text: string) -> common.Error {
 	ok: bool
 
 	fullpath := uri.path
@@ -333,10 +338,10 @@ index_file :: proc(uri: common.Uri, text: string) -> common.Error {
 
 	corrected_uri := common.create_uri(fullpath, context.temp_allocator)
 
-	for k, &v in indexer.index.collection.packages {
+	for k, &v in index.index.collection.packages {
 		for k2, v2 in v.symbols {
 			if corrected_uri.uri == v2.uri {
-				free_symbol(v2, indexer.index.collection.allocator)
+				free_symbol(v2, index.index.collection.allocator)
 				delete_key(&v.symbols, k2)
 			}
 		}
@@ -351,7 +356,7 @@ index_file :: proc(uri: common.Uri, text: string) -> common.Error {
 		}
 	}
 
-	if ret := collect_symbols(&indexer.index.collection, file, corrected_uri.uri); ret != .None {
+	if ret := collect_symbols(index, &index.index.collection, file, corrected_uri.uri); ret != .None {
 		log.errorf("failed to collect symbols on save %v", ret)
 	}
 
@@ -359,16 +364,8 @@ index_file :: proc(uri: common.Uri, text: string) -> common.Error {
 }
 
 
-setup_index :: proc(builtin_path: string) {
-	build_cache.loaded_pkgs = make(map[string]PackageCacheInfo, 50, context.allocator)
-	symbol_collection := make_symbol_collection(context.allocator, &common.config)
-	indexer.index = make_memory_index(symbol_collection)
-
-	try_build_package(builtin_path)
-}
-
-free_index :: proc() {
-	delete_symbol_collection(indexer.index.collection)
+free_index :: proc(index: ^Indexer) {
+	delete_symbol_collection(index.index.collection)
 }
 
 log_error_handler :: proc(pos: tokenizer.Pos, msg: string, args: ..any) {

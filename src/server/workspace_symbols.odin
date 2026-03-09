@@ -18,7 +18,7 @@ WorkspaceCache :: struct {
 @(thread_local, private = "file")
 cache: WorkspaceCache
 
-get_workspace_symbols :: proc(query: string) -> (workspace_symbols: []WorkspaceSymbol, ok: bool) {
+get_workspace_symbols :: proc(index: ^Indexer, query: string) -> (workspace_symbols: []WorkspaceSymbol, ok: bool) {
 	if time.since(cache.time) > 20 * time.Second {
 		for pkg in cache.pkgs {
 			delete(pkg)
@@ -73,7 +73,7 @@ get_workspace_symbols :: proc(query: string) -> (workspace_symbols: []WorkspaceS
 					}
 				}
 
-				try_build_package(pkg)
+				try_build_package(index, pkg)
 				append(&cache.pkgs, strings.clone(pkg, context.allocator))
 			}
 		}
@@ -82,7 +82,7 @@ get_workspace_symbols :: proc(query: string) -> (workspace_symbols: []WorkspaceS
 
 	limit :: 100
 	symbols := make([dynamic]WorkspaceSymbol, 0, limit, context.temp_allocator)
-	if results, ok := fuzzy_search(query, cache.pkgs[:], "", resolve_fields = false, limit = limit); ok {
+	if results, ok := fuzzy_search(index, query, cache.pkgs[:], "", resolve_fields = false, limit = limit); ok {
 		for result in results {
 			symbol := WorkspaceSymbol {
 				name = result.symbol.name,

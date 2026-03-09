@@ -1,3 +1,4 @@
+#+feature using-stmt
 /*
 
 LSP Reference:
@@ -128,6 +129,7 @@ semantic_tokens_to_response_params :: proc(tokens: []SemanticToken) -> SemanticT
 get_semantic_tokens :: proc(
 	document: ^Document,
 	range: common.Range,
+	index: ^Indexer,
 	symbols: map[uintptr]SymbolAndNode,
 ) -> []SemanticToken {
 	ast_context := make_ast_context(
@@ -136,6 +138,7 @@ get_semantic_tokens :: proc(
 		document.package_name,
 		document.uri.uri,
 		document.fullpath,
+		index,
 	)
 	ast_context.current_package = ast_context.document_package
 
