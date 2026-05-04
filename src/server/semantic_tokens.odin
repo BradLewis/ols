@@ -387,10 +387,7 @@ visit_node :: proc(node: ^ast.Node, builder: ^SemanticTokenBuilder) {
 		visit_proc_type(n.type, builder)
 		visit_node(n.body, builder)
 	case ^ast.Proc_Group:
-		for arg in n.args {
-			ident := arg.derived.(^ast.Ident) or_continue
-			write_semantic_node(builder, arg, .Function)
-		}
+		visit_nodes(n.args, builder)
 	case ^ast.Bit_Field_Type:
 		visit_bit_field_fields(n^, builder)
 	case ^ast.Helper_Type:
