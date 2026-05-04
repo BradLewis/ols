@@ -202,6 +202,38 @@ semantic_tokens_poly_proc :: proc(t: ^testing.T) {
 }
 
 @(test)
+semantic_tokens_proc_group_selector :: proc(t: ^testing.T) {
+
+	src := test.Source{
+		main = `package test
+		import "pkg"
+		local_proc :: proc() {}
+		group :: proc {
+			local_proc,
+			pkg.some_proc,
+		}
+		`,
+		packages = {
+			test.Package{
+				pkg = "pkg",
+				source = `package pkg
+				some_proc :: proc() {}
+				`,
+			},
+		},
+	}
+
+	test.expect_semantic_tokens(t, &src, {
+		{1, 10, 3, .Namespace, {}},            // [0]  pkg (import)
+		{1, 2, 10, .Function,  {.ReadOnly}},   // [1]  local_proc
+		{1, 2,  5, .Function,  {.ReadOnly}},   // [2]  group
+		{1, 3, 10, .Function,  {.ReadOnly}},   // [3]  local_proc
+		{1, 3,  3, .Namespace, {.ReadOnly}},   // [4]  pkg (selector expr)
+		{0, 4,  9, .Function,  {.ReadOnly}},   // [5]  some_proc
+	})
+}
+
+@(test)
 semantic_tokens_fixed_capacity_dynamic_array :: proc(t: ^testing.T) {
 	src := test.Source {
 		main = `package test
