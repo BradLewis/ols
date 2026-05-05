@@ -6650,3 +6650,21 @@ ast_hover_map_value_by_reference_ok :: proc(t: ^testing.T) {
 
 	test.expect_hover(t, &source, "test.ok: bool")
 }
+
+@(test)
+ast_hover_proc_with_generic_return_type_with_default :: proc(t: ^testing.T) {
+	source := test.Source {
+		main     = `package test'
+		Foo :: struct($T: typeid) {}
+
+		foo :: proc(f: Foo($T)) -> (a: T, b := false) {}
+
+		main :: proc() {
+			f: Foo(int)
+			a, b{*} := foo(f)
+		}
+		`,
+	}
+
+	test.expect_hover(t, &source, "test.b: bool")
+}

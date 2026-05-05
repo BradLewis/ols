@@ -618,6 +618,7 @@ resolve_generic_function_symbol :: proc(
 
 	for result in results {
 		if result.type == nil {
+			append(&return_types, result)
 			continue
 		}
 
