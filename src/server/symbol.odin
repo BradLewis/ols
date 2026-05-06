@@ -135,7 +135,8 @@ SymbolBasicValue :: struct {
 }
 
 SymbolBitSetValue :: struct {
-	expr: ^ast.Expr,
+	expr:       ^ast.Expr,
+	underlying: ^ast.Expr, // possibly nil
 }
 
 SymbolUntypedValueType :: enum {
@@ -744,6 +745,7 @@ free_symbol :: proc(symbol: Symbol, allocator: mem.Allocator) {
 		free_ast(v.types, allocator)
 	case SymbolBitSetValue:
 		free_ast(v.expr, allocator)
+		free_ast(v.underlying, allocator)
 	case SymbolDynamicArrayValue:
 		free_ast(v.expr, allocator)
 	case SymbolFixedArrayValue:

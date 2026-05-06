@@ -769,7 +769,7 @@ expand_call_args :: proc(ast_context: ^AstContext, call: ^ast.Call_Expr) -> ([]C
 	) -> bool {
 		ast_context.use_locals = true
 
-		call_arg := CallArg{
+		call_arg := CallArg {
 			value_expr = arg,
 		}
 
@@ -4144,7 +4144,8 @@ make_symbol_bitset_from_ast :: proc(
 	}
 
 	symbol.value = SymbolBitSetValue {
-		expr = v.elem,
+		expr       = v.elem,
+		underlying = v.underlying,
 	}
 
 	return symbol

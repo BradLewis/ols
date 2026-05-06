@@ -3624,7 +3624,7 @@ ast_hover_bit_set_intersection :: proc(t: ^testing.T) {
 		foo_{*}b := foo_bar & {.Foo}  // hover for foo_b
 		`,
 	}
-	test.expect_hover(t, &source, "test.foo_b: distinct bit_set[Flag]\n---\nhover for foo_b")
+	test.expect_hover(t, &source, "test.foo_b: distinct bit_set[Flag; u8]\n---\nhover for foo_b")
 }
 
 @(test)
@@ -3638,7 +3638,7 @@ ast_hover_bit_set_union :: proc(t: ^testing.T) {
 		foo_{*}b := {.Foo} | foo_bar  // hover for foo_b
 		`,
 	}
-	test.expect_hover(t, &source, "test.foo_b: distinct bit_set[Flag]\n---\nhover for foo_b")
+	test.expect_hover(t, &source, "test.foo_b: distinct bit_set[Flag; u8]\n---\nhover for foo_b")
 }
 
 @(test)
@@ -6667,4 +6667,16 @@ ast_hover_proc_with_generic_return_type_with_default :: proc(t: ^testing.T) {
 	}
 
 	test.expect_hover(t, &source, "test.b: bool")
+}
+
+@(test)
+ast_hover_proc_bit_set_underlying_type :: proc(t: ^testing.T) {
+	source := test.Source {
+		main     = `package test'
+		Foo :: enum {}
+		Ba{*}r :: bit_set[Foo; u64]
+		`,
+	}
+
+	test.expect_hover(t, &source, "test.Bar :: bit_set[Foo; u64]")
 }
