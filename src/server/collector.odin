@@ -305,10 +305,12 @@ collect_bitset_field :: proc(
 	bitset_type: ast.Bit_Set_Type,
 	package_map: map[string]string,
 ) -> SymbolBitSetValue {
-	cloned := clone_type(bitset_type.elem, collection.allocator, &collection.unique_strings)
-	replace_package_alias(cloned, package_map, collection)
+	expr := clone_type(bitset_type.elem, collection.allocator, &collection.unique_strings)
+	underlying := clone_type(bitset_type.underlying, collection.allocator, &collection.unique_strings)
+	replace_package_alias(expr, package_map, collection)
+	replace_package_alias(underlying, package_map, collection)
 
-	return SymbolBitSetValue{expr = cloned}
+	return SymbolBitSetValue{expr = expr, underlying = underlying}
 }
 
 collect_slice :: proc(

@@ -1,10 +1,10 @@
 #+feature dynamic-literals
 package server
 
-import "core:slice"
 import "core:fmt"
 import "core:odin/ast"
 import path "core:path/slashpath"
+import "core:slice"
 import "core:strings"
 
 DOC_SECTION_DELIMITER :: "\n---\n" // The string separating each section of documentation
@@ -235,6 +235,10 @@ write_short_signature :: proc(sb: ^strings.Builder, ast_context: ^AstContext, sy
 	case SymbolBitSetValue:
 		fmt.sbprintf(sb, "%sbit_set[", pointer_prefix)
 		build_string_node(v.expr, sb, false)
+		if v.underlying != nil {
+			strings.write_string(sb, "; ")
+			build_string_node(v.underlying, sb, false)
+		}
 		strings.write_string(sb, "]")
 		return
 	case SymbolEnumValue:
