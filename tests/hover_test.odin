@@ -6943,3 +6943,21 @@ ast_hover_overload_pointer_arg_from_return :: proc(t: ^testing.T) {
 
 	test.expect_hover(t, &source, "test.bar :: proc(value: $T) -> T")
 }
+
+@(test)
+ast_hover_proc_overload_intrinsics :: proc(t: ^testing.T) {
+	source := test.Source {
+		main     = `package test
+		foo_int :: proc(a: $T) where intrinsics.type_is_integer(T) {}
+		foo :: proc {
+			foo_int,
+		}
+
+		main :: proc() {
+			bar := "foo"
+			fo{*}o(bar)
+		}
+		`,
+	}
+	test.expect_hover(t, &source, "Foo.c: f32\n---\nc")
+}
