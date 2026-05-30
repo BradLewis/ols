@@ -541,7 +541,14 @@ resolve_generic_function_ast :: proc(
 
 	range := common.get_token_range(proc_lit, ast_context.file.src)
 	uri := common.create_uri(proc_lit.pos.file, ast_context.allocator).uri
-	return resolve_generic_function_symbol(ast_context, params, results, proc_lit.inlining, proc_symbol)
+	return resolve_generic_function_symbol(
+		ast_context,
+		params,
+		results,
+		proc_lit.inlining,
+		proc_lit.where_clauses,
+		proc_symbol,
+	)
 }
 
 get_proc_return_value_count :: proc(fields: []^ast.Field) -> int {
@@ -562,6 +569,7 @@ resolve_generic_function_symbol :: proc(
 	params: []^ast.Field,
 	results: []^ast.Field,
 	inlining: ast.Proc_Inlining,
+	where_clauses: []^ast.Expr,
 	proc_symbol: Symbol,
 ) -> (
 	Symbol,
@@ -704,6 +712,7 @@ resolve_generic_function_symbol :: proc(
 		orig_arg_types    = params[:],
 		orig_return_types = results[:],
 		inlining          = inlining,
+		where_clauses     = where_clauses,
 	}
 
 	return symbol, true

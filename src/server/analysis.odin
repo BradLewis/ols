@@ -3036,6 +3036,7 @@ resolve_symbol_return :: proc(ast_context: ^AstContext, symbol: Symbol, ok := tr
 				v.arg_types,
 				v.return_types,
 				v.inlining,
+				v.where_clauses,
 				symbol,
 			); ok {
 				return resolved_symbol, ok
